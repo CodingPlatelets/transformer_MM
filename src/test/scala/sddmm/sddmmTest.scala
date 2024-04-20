@@ -2,16 +2,18 @@ package sddmm
 
 import chisel3._
 import chisel3.experimental.BundleLiterals._
+
 import scala.math._
 import chisel3.simulator.EphemeralSimulator._
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.must.Matchers
+import pe.VecDotVec
 
 class sddmmTest extends AnyFreeSpec with Matchers {
   val dim = 86
 
-  "sddmm should calculate proper greatest common denominator" in {
-    simulate(new VecMul(dim)) { dut =>
+  "VecDotVec should calculate proper greatest common denominator" in {
+    simulate(new VecDotVec(dim)) { dut =>
       val rnd = new scala.util.Random(0)
       val testValues = (1 to dim).map(_ => (1, 1))
       val inputSeqQ = testValues.map { case (x, _) => (x * rnd.nextInt(10)) }
@@ -40,7 +42,7 @@ class sddmmTest extends AnyFreeSpec with Matchers {
         dut.clock.step()
       }
 
-      dut.io.out.expect(resultSeq.U)
+      dut.io.res.expect(resultSeq.U)
     }
   }
 }
