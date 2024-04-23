@@ -31,7 +31,7 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32)
   io.num.ready := DontCare
 
   /** Generate a FSM to receive all num and vec in n cycles and then use PE to
-    * calcalate the result.
+    * calculate the result.
     *
     * The rules are as follows:
     *
