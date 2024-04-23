@@ -49,12 +49,13 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32)
   }
 
   val tempRegVec = VecInit(Seq.fill(dimQ)(RegInit(0.U((bit * 2).W))))
+
+  val state = RegInit(State.idle)
   val hasData = WireInit(
     state === State.receive && io.num.valid && io.vec.valid
   )
   val cnt = counter(io.numOfMask, hasData)
 
-  val state = RegInit(State.idle)
   switch(state) {
     is(State.idle) {
       io.res.valid := false.B
