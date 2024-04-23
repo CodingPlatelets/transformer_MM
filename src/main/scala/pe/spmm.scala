@@ -21,38 +21,78 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32)
     x
   }
 
+  val pes = for (i <- 0 until dimQ) yield Module(new PE(bit, (index, i), 0))
+  for (i <- 0 until dimQ) {
+    pes(i).io := DontCare
+  }
+
+  io.res := DontCare
+  io.vec.ready := DontCare
+  io.num.ready := DontCare
+
+  /** Generate a FSM to receive all num and vec in n cycles and then use PE to
+    * calcalate the result.
+    *
+    * The rules are as follows:
+    *
+    * idle: when counter = 0 turn state to receive.
+    *
+    * receive: when counter < numOfMask: turn num and vec to ready then receive
+    * their data when counter = numOfMask: turn the state -> result
+    *
+    * result: turn the num and vec's ready to false and turn the res.valid to
+    * true and res.bits to the result then turn the state to idle
+    */
+
+  object State extends ChiselEnum {
+    val idle, receive, result = Value
+  }
+
   val tempRegVec = VecInit(Seq.fill(dimQ)(RegInit(0.U((bit * 2).W))))
-  val hasData = WireInit(tempRegVec.asUInt =/= 0.U)
-  val cnt = counter(io.numOfMask - 1.U, hasData)
+  val hasData = WireInit(
+    state === State.receive && io.num.valid && io.vec.valid
+  )
+  val cnt = counter(io.numOfMask, hasData)
 
-  when(cnt === 0.U) {
-    for (i <- 0 until dimQ) {
-      tempRegVec(i) := 0.U
+  val state = RegInit(State.idle)
+  switch(state) {
+    is(State.idle) {
+      io.res.valid := false.B
+      io.res.bits := DontCare
+      when(cnt === 0.U && io.vec.valid && io.num.valid) {
+        state := State.receive
+      }
+    }
+    is(State.receive) {
+      io.num.ready := true.B
+      io.vec.ready := true.B
+      when(io.num.valid && io.vec.valid) {
+        for (i <- 0 until dimQ) {
+          pes(i).io.controlSign := ControlSignalSel.SPMM
+          pes(i).io.inTop := io.vec.bits(i)
+          pes(i).io.inLeft := io.num.bits
+          pes(i).io.inReg := tempRegVec(i)
+          tempRegVec(i) := pes(i).io.outReg
+        }
+      }
+      when(cnt === io.numOfMask) {
+        state := State.result
+      }
+        .otherwise {
+          state := State.receive
+        }
+    }
+    is(State.result) {
+      io.num.ready := false.B
+      io.vec.ready := false.B
+      io.res.valid := true.B
+      io.res.bits := tempRegVec
+      state := State.idle
+      for (i <- 0 until dimQ) {
+        tempRegVec(i) := 0.U
+      }
     }
   }
-
-  // a logic that when res is valid then num and vec are ready,
-  // and when num and vec are not ready then res is not valid
-  io.res.valid := false.B
-  io.res.bits := DontCare
-  io.num.ready := io.res.valid && io.res.ready
-  io.vec.ready := io.res.valid && io.res.ready
-  when(io.res.ready && cnt === io.numOfMask - 1.U) {
-    io.res.valid := true.B
-    io.res.bits := tempRegVec
-  }
-
-  when(io.num.ready && io.num.valid && io.vec.ready && io.vec.valid) {
-    for (i <- 0 until dimQ) {
-      val pe = Module(new PE(bit, (index, i), 0))
-      pe.io.controlSign := ControlSignalSel.SPMM
-      pe.io.inTop := io.vec.bits(i)
-      pe.io.inLeft := io.num.bits
-      pe.io.inReg := tempRegVec(i)
-      tempRegVec(i) := pe.io.outReg
-    }
-  }
-
 }
 
 // spmm using PE
