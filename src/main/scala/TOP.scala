@@ -1,14 +1,15 @@
 import chisel3._
 import chisel3.stage._
 import _root_.circt.stage.ChiselStage
-import pe.PE
+import pe._
 
 object TOP extends App {
   ChiselStage.emitSystemVerilogFile(
     //    new SeqDotVecs(3,8),
-    //      new VecDotVec(8),
-    new PE(1, 1, (1, 1), 0, 1),
-    firtoolOpts = Array("-disable-all-randomization", "-strip-debug-info", "--verilog")
+        //  new VecDotVec(8),
+        new NumDotVec(4,1,8),
+    // new PE(1, 1, (1, 1), 0, 1),
+    firtoolOpts = Array("-disable-all-randomization", "-strip-debug-info")
   )
 
   //  (new circt.stage.ChiselStage).execute(
