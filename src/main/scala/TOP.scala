@@ -6,8 +6,8 @@ import pe._
 object TOP extends App {
   ChiselStage.emitSystemVerilogFile(
     //    new SeqDotVecs(3,8),
-        //  new VecDotVec(8),
-        new NumDotVec(4,1,8),
+    //  new VecDotVec(8),
+    new NumDotVec(4, 1, 4),
     // new PE(1, 1, (1, 1), 0, 1),
     firtoolOpts = Array("-disable-all-randomization", "-strip-debug-info")
   )

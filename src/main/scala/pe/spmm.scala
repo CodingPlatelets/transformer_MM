@@ -4,8 +4,7 @@ import chisel3._
 import chisel3.util._
 
 // using PE to do num dot vec
-class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32)
-    extends Module {
+class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module {
   val io = IO(new Bundle {
     val num = Flipped(Decoupled(UInt(bit.W)))
     val vec = Flipped(Decoupled((Vec(dimQ, UInt(bit.W)))))
@@ -78,10 +77,9 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32)
       }
       when(cnt === io.numOfMask) {
         state := State.result
+      }.otherwise {
+        state := State.receive
       }
-        .otherwise {
-          state := State.receive
-        }
     }
     is(State.result) {
       io.num.ready := false.B
