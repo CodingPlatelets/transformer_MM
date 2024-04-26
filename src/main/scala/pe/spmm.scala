@@ -47,7 +47,7 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module
     val idle, receive, result = Value
   }
 
-  val tempRegVec = VecInit(Seq.fill(dimQ)(RegInit(0.U((bit * 2).W))))
+  val tempRegVec = RegInit(VecInit(Seq.fill(dimQ)(0.U((2 * bit).W))))
 
   val state = RegInit(State.idle)
   val hasData = WireInit(
@@ -57,39 +57,41 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module
 
   switch(state) {
     is(State.idle) {
-      io.res.valid := false.B
-      io.res.bits := DontCare
+      for (i <- 0 until dimQ) {
+        tempRegVec(i) := WireInit(0.U)
+      }
+      io.res.valid := WireInit(false.B)
       when(cnt === 0.U && io.vec.valid && io.num.valid) {
         state := State.receive
       }
     }
     is(State.receive) {
-      io.num.ready := true.B
-      io.vec.ready := true.B
-      when(io.num.valid && io.vec.valid) {
+      io.num.ready := WireInit(true.B)
+      io.vec.ready := WireInit(true.B)
+      io.res.valid := WireInit(false.B)
+
+      when(cnt === io.numOfMask) {
+        state := State.result
+      }
+
+      when(cnt < io.numOfMask && io.num.valid && io.vec.valid) {
         for (i <- 0 until dimQ) {
           pes(i).io.controlSign := ControlSignalSel.SPMM
-          pes(i).io.inTop := io.vec.bits(i)
-          pes(i).io.inLeft := io.num.bits
-          pes(i).io.inReg := tempRegVec(i)
+          pes(i).io.inTop := WireInit(io.vec.bits(i))
+          pes(i).io.inLeft := WireInit(io.num.bits)
+          pes(i).io.inReg := WireInit(tempRegVec(i))
           tempRegVec(i) := pes(i).io.outReg
         }
       }
-      when(cnt === io.numOfMask) {
-        state := State.result
-      }.otherwise {
-        state := State.receive
-      }
     }
     is(State.result) {
-      io.num.ready := false.B
-      io.vec.ready := false.B
-      io.res.valid := true.B
+
+      io.num.ready := WireInit(false.B)
+      io.vec.ready := WireInit(false.B)
+      io.res.valid := WireInit(true.B)
       io.res.bits := tempRegVec
+
       state := State.idle
-      for (i <- 0 until dimQ) {
-        tempRegVec(i) := 0.U
-      }
     }
   }
 }
