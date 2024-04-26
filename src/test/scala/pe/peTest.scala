@@ -34,6 +34,7 @@ class PETest extends AnyFreeSpec with Matchers {
 
         dut.clock.step()
         dut.io.outReg.expect(reg(i).U)
+      }
     }
   }
 }
