@@ -28,14 +28,15 @@ class PE(bit: Int, id: (Int, Int), bufferSize: Int = 0) extends Module {
 
   switch(io.controlSign) {
     is(ControlSignalSel.SDDMM) {
+
       // MAC operation
-      io.outReg := RegNext(io.inReg +& io.inTop * io.inLeft)
+      io.outReg := io.inReg +& (io.inTop * io.inLeft)
 
       // shift left value to right like a Systolic array
-      io.outRight := RegNext(io.inLeft)
+      io.outRight := io.inLeft
     }
     is(ControlSignalSel.SPMM) {
-      io.outReg := RegNext(io.inReg +& io.inTop * io.inLeft)
+      io.outReg := io.inReg +& (io.inTop * io.inLeft)
     }
   }
 }
