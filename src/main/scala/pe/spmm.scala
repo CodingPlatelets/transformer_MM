@@ -3,15 +3,7 @@ package pe
 import chisel3._
 import chisel3.util._
 
-// using PE to do num dot vec
-class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module {
-  val io = IO(new Bundle {
-    val num = Flipped(Decoupled(UInt(bit.W)))
-    val vec = Flipped(Decoupled((Vec(dimQ, UInt(bit.W)))))
-    val res = Decoupled(Vec(dimQ, UInt((bit * 2).W)))
-    val numOfMask = Input(UInt(8.W))
-  })
-
+object utils {
   def counter(max: UInt, cond: Bool) = {
     val x = RegInit(0.U(max.getWidth.W))
     when(cond) {
@@ -20,8 +12,23 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module
     x
   }
 
-  val pes = for (i <- 0 until dimQ) yield Module(new PE(bit, (index, i), 0))
-  for (i <- 0 until dimQ) {
+  def maskOH(mask: Vec[Bool]) = {
+    var uMask = mask.asUInt
+    uMask - uMask & (uMask - 1.U)
+  }
+}
+
+// using PE to do num dot vec
+class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module {
+  val io = IO(new Bundle {
+    val num = Flipped(Decoupled(UInt(bit.W)))
+    val vec = Flipped(Decoupled((Vec(dimV, UInt(bit.W)))))
+    val res = Decoupled(Vec(dimV, UInt((bit * 2).W)))
+    val numOfMask = Input(UInt(8.W))
+  })
+
+  val pes = for (i <- 0 until dimV) yield Module(new PE(bit, (index, i), 0))
+  for (i <- 0 until dimV) {
     pes(i).io := DontCare
   }
 
@@ -47,17 +54,17 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module
     val idle, receive, result = Value
   }
 
-  val tempRegVec = RegInit(VecInit(Seq.fill(dimQ)(0.U((2 * bit).W))))
+  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U((2 * bit).W))))
 
   val state = RegInit(State.idle)
   val hasData = WireInit(
     state === State.receive && io.num.valid && io.vec.valid
   )
-  val cnt = counter(io.numOfMask, hasData)
+  val cnt = utils.counter(io.numOfMask, hasData)
 
   switch(state) {
     is(State.idle) {
-      for (i <- 0 until dimQ) {
+      for (i <- 0 until dimV) {
         tempRegVec(i) := WireInit(0.U)
       }
       io.res.valid := WireInit(false.B)
@@ -75,7 +82,7 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module
       }
 
       when(cnt < io.numOfMask && io.num.valid && io.vec.valid) {
-        for (i <- 0 until dimQ) {
+        for (i <- 0 until dimV) {
           pes(i).io.controlSign := ControlSignalSel.SPMM
           pes(i).io.inTop := WireInit(io.vec.bits(i))
           pes(i).io.inLeft := WireInit(io.num.bits)
@@ -96,13 +103,72 @@ class NumDotVec(val bit: Int, val index: Int, val dimQ: Int = 32) extends Module
   }
 }
 
-// spmm using PE
+// spmm using NumDotVec via stream data input
 // using mask to choose the needed nums
-class spmm(dimSpare: Int, bit: Int = 4, val dimV: Int = 32) extends Module {
+// to find one's position, using n - n & (n-1) and than one hot to int
+// a row of a L x L matrix with mask select the needed nums will dot the specific row of the V matrix selected by the same mask
+class spmm(bit: Int = 4, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends Module {
   val io = IO(new Bundle {
-    val spareNums = Input(Vec(dimSpare, UInt(bit.W)))
-    val vNums = Input(Vec(dimV, UInt(bit.W)))
-
+    val mask = Input(Vec(L, Vec(L, Bool())))
+    val numOfMask = Input(UInt(8.W))
+    val vMatrix = Input(Vec(L, Vec(dimV, UInt(bit.W))))
+    val nums = Flipped(Decoupled(Vec(L, UInt(bit.W))))
+    val res = Decoupled(Vec(dimV, UInt((2 * bit).W)))
   })
+
+  // TODO: will generate more ALUs through alu param
+  var numDotVec = Module(new NumDotVec(bit, alu, dimV))
+  val isValid = numDotVec.io.res.valid
+  val cnt = utils.counter(L.U, isValid)
+  io.nums := DontCare
+  io.res := DontCare
+  numDotVec.io := DontCare
+
+  object State extends ChiselEnum {
+    val idle, calculate, result = Value
+  }
+
+  val state = RegInit(State.idle)
+  var mask1OH = RegInit(utils.maskOH(io.mask(cnt)))
+
+  switch(state) {
+    is(State.idle) {
+      io.res.valid := false.B
+      io.nums.ready := false.B
+      numDotVec.io.num.valid := false.B
+      numDotVec.io.vec.valid := false.B
+
+      when(cnt === 0.U && io.nums.valid) {
+        state := State.calculate
+      }
+    }
+    is(State.calculate) {
+      when(cnt < L.U && io.nums.valid && numDotVec.io.num.ready && numDotVec.io.vec.ready && !numDotVec.io.res.valid) {
+        io.nums.ready := true.B
+        numDotVec.io.num.valid := true.B
+        numDotVec.io.vec.valid := true.B
+
+        numDotVec.io.numOfMask := io.numOfMask
+        numDotVec.io.num.bits := Mux1H(mask1OH, io.nums.bits)
+        numDotVec.io.vec.bits := Mux1H(mask1OH, io.vMatrix)
+        mask1OH := mask1OH & (mask1OH - 1.U)
+      }
+
+      when(numDotVec.io.res.valid) {
+        state := State.result
+      }
+    }
+    is(State.result) {
+      when(cnt < L.U && numDotVec.io.res.valid) {
+        numDotVec.io.res.ready := true.B
+        io.res.valid := numDotVec.io.res.valid
+        io.res.bits := numDotVec.io.res.bits
+        state := State.calculate
+      }
+      when(cnt === L.U) {
+        state := State.idle
+      }
+    }
+  }
 
 }
