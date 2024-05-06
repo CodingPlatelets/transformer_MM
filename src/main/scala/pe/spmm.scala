@@ -12,9 +12,9 @@ object utils {
     x
   }
 
-  def maskOH(mask: Vec[Bool]) = {
-    var uMask = mask.asUInt
-    uMask - uMask & (uMask - 1.U)
+  // this will find the last "one" in an UInt, and then convert it to a one hot num
+  def maskOH(mask: UInt) = {
+    mask - (mask & (mask - 1.U))
   }
 }
 
@@ -65,18 +65,19 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
   switch(state) {
     is(State.idle) {
       for (i <- 0 until dimV) {
-        tempRegVec(i) := WireInit(0.U)
+        tempRegVec(i) := 0.U
       }
-      io.res.valid := WireInit(false.B)
-      when(cnt === 0.U && io.vec.valid && io.num.valid) {
+      io.res.valid := false.B
+      when(cnt === 0.U) {
         state := State.receive
       }
     }
     is(State.receive) {
-      io.num.ready := WireInit(true.B)
-      io.vec.ready := WireInit(true.B)
-      io.res.valid := WireInit(false.B)
+      io.num.ready := true.B
+      io.vec.ready := true.B
+      io.res.valid := false.B
 
+      // TODO: maybe it should not wait for a cycle
       when(cnt === io.numOfMask) {
         state := State.result
       }
@@ -92,10 +93,9 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
       }
     }
     is(State.result) {
-
-      io.num.ready := WireInit(false.B)
-      io.vec.ready := WireInit(false.B)
-      io.res.valid := WireInit(true.B)
+      io.num.ready := false.B
+      io.vec.ready := false.B
+      io.res.valid := true.B
       io.res.bits := tempRegVec
 
       state := State.idle
@@ -107,7 +107,7 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
 // using mask to choose the needed nums
 // to find one's position, using n - n & (n-1) and than one hot to int
 // a row of a L x L matrix with mask select the needed nums will dot the specific row of the V matrix selected by the same mask
-class spmm(bit: Int = 4, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends Module {
+class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends Module {
   val io = IO(new Bundle {
     val mask = Input(Vec(L, Vec(L, Bool())))
     val numOfMask = Input(UInt(8.W))
@@ -116,59 +116,116 @@ class spmm(bit: Int = 4, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
     val res = Decoupled(Vec(dimV, UInt((2 * bit).W)))
   })
 
-  // TODO: will generate more ALUs through alu param
-  var numDotVec = Module(new NumDotVec(bit, alu, dimV))
-  val isValid = numDotVec.io.res.valid
-  val cnt = utils.counter(L.U, isValid)
-  io.nums := DontCare
-  io.res := DontCare
+  io.nums.ready := DontCare
+  io.res.valid := DontCare
+  io.res.bits := DontCare
+
+  // TODO will generate more ALUs through alu param
+  val numDotVec = Module(new NumDotVec(bit, alu, dimV))
   numDotVec.io := DontCare
+
+  val isValid = WireInit(numDotVec.io.res.valid)
+  val cnt = utils.counter(L.U, isValid)
 
   object State extends ChiselEnum {
     val idle, calculate, result = Value
   }
 
   val state = RegInit(State.idle)
-  var mask1OH = RegInit(utils.maskOH(io.mask(cnt)))
 
+  // origin mask number
+  val maskReg = RegInit(0.U(L.W))
+  val mask1OH = WireInit(0.U(L.W))
+  val tempMaskReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(L)(false.B))))))
+  val tempVMatrixReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W)))))))
+
+  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U((2 * bit).W))))
   switch(state) {
     is(State.idle) {
+      // test
+      // printf("State is idle\n")
+
       io.res.valid := false.B
       io.nums.ready := false.B
       numDotVec.io.num.valid := false.B
       numDotVec.io.vec.valid := false.B
+      maskReg := Mux1H(UIntToOH(cnt), io.mask).asUInt
+      tempMaskReg := io.mask
+      tempVMatrixReg := io.vMatrix
 
-      when(cnt === 0.U && io.nums.valid) {
+      when(cnt === 0.U && io.nums.valid && numDotVec.io.num.ready && numDotVec.io.vec.ready) {
         state := State.calculate
       }
     }
     is(State.calculate) {
-      when(cnt < L.U && io.nums.valid && numDotVec.io.num.ready && numDotVec.io.vec.ready && !numDotVec.io.res.valid) {
+      // //test
+      // printf("State is calculate\n")
+      // printf("cnt is %d\n", cnt)
+      // printf("current numDotVec.num.ready is %d\n", numDotVec.io.num.ready)
+      // printf("current numDotVec.vec.ready is %d\n", numDotVec.io.vec.ready)
+      io.res.valid := false.B
+
+      when(!numDotVec.io.res.valid && maskReg =/= 0.U) {
         io.nums.ready := true.B
         numDotVec.io.num.valid := true.B
         numDotVec.io.vec.valid := true.B
 
         numDotVec.io.numOfMask := io.numOfMask
+        mask1OH := utils.maskOH(maskReg)
+
         numDotVec.io.num.bits := Mux1H(mask1OH, io.nums.bits)
-        numDotVec.io.vec.bits := Mux1H(mask1OH, io.vMatrix)
-        mask1OH := mask1OH & (mask1OH - 1.U)
+        numDotVec.io.vec.bits := Mux1H(mask1OH, tempVMatrixReg)
+        maskReg := maskReg & (maskReg - 1.U)
       }
 
+      // TODO will wait for numDotVec's last cycle to calculate the last result, so it will wait for a more cycle
       when(numDotVec.io.res.valid) {
         state := State.result
+        tempRegVec := numDotVec.io.res.bits
       }
     }
     is(State.result) {
-      when(cnt < L.U && numDotVec.io.res.valid) {
+      when(cnt < L.U) {
+        maskReg := Mux1H(UIntToOH(cnt), tempMaskReg).asUInt
+        // printf("State is result and continue to calculate\n")
         numDotVec.io.res.ready := true.B
-        io.res.valid := numDotVec.io.res.valid
-        io.res.bits := numDotVec.io.res.bits
+        io.res.valid := true.B
+        io.res.bits := tempRegVec
         state := State.calculate
       }
       when(cnt === L.U) {
+        // printf("State is result and finished\n")
         state := State.idle
       }
     }
   }
 
+}
+
+// test for mux1h
+class testMux extends Module {
+  val nums = IO(Flipped(Decoupled(Vec(16, Vec(16, UInt(4.W))))))
+  val sel = IO(Input(Vec(16, Bool())))
+  val out = IO(Decoupled(Vec(16, UInt(4.W))))
+
+  nums.ready := true.B
+  out.valid := true.B
+  val res = Mux1H(sel.asUInt, nums.bits)
+  out.bits := res
+}
+
+class counterMux1H(val L: Int = 8) extends Module {
+  val counter = IO(Input(UInt(L.W)))
+  val vec = IO(Input(Vec(L, Vec(L, Bool()))))
+
+  val out = IO(Output(Vec(L, Bool())))
+
+  out := Mux1H(UIntToOH(counter), vec)
+}
+
+class findOneHot extends Module {
+  val in = IO(Input(UInt(8.W)))
+  val out = IO(Output(UInt(8.W)))
+
+  out := in - (in & (in - 1.U))
 }
