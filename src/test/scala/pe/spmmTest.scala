@@ -1,96 +1,114 @@
 package pe
 
 import chisel3._
-import chisel3.experimental.BundleLiterals._
 
 import chisel3.simulator.EphemeralSimulator._
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.must.Matchers
+class spmmTest extends AnyFreeSpec with Matchers {
 
-class sddmmTest extends AnyFreeSpec with Matchers {
-  val dim = 8
   val bit = 8
-  val numOfMask = 3
-
+  val dimV = 8
+  val L = 15
   "numDotVec should calculate proper greatest common denominator" in {
-    simulate(new NumDotVec(bit, 0, dim)) { dut =>
-      val testLeft = for (i <- 1 to numOfMask) yield { i }
-      val testTOP = for (k <- 1 to numOfMask) yield {
-        for (i <- 1 to dim) yield {
-          k * i * 2
+    simulate(new spmm(bit, dimV, L)) { dut =>
+      var mask = for (i <- 0 until L) yield for (j <- 0 until L) yield {
+        if (j % 9 == 0) true else false
+      }
+
+      var nums01 = for (i <- 0 until L) yield { if (i % 9 == 0) i + (i + 1) else 0 }
+      var nums02 = for (i <- 0 until L) yield { if (i % 9 == 0) 5 + (i * 2) else 0 }
+      var nums03 = for (i <- 0 until L) yield { if (i % 9 == 0) 4 + (i * 3) else 0 }
+
+      var vMatrix = for (i <- 1 to L) yield {
+        if ((i - 1) % 9 == 0) for (j <- 1 to dimV) yield {
+          2 * i + j
+        }
+        else for (j <- 1 to dimV) yield 0
+      }
+
+      var res01 = Array.fill(dimV)(0)
+      var res02 = Array.fill(dimV)(0)
+      var res03 = Array.fill(dimV)(0)
+
+      for (i <- 0 until L) {
+        if (i % 9 == 0) {
+          for (j <- 0 until dimV) {
+            res01(j) = res01(j) + nums01(i) * vMatrix(i)(j)
+            res02(j) = res02(j) + nums02(i) * vMatrix(i)(j)
+            res03(j) = res03(j) + nums03(i) * vMatrix(i)(j)
+          }
         }
       }
-      // calculate the result of the test: each testLeft * testTOP(i) and finally sum them as a vec with dim elements
-      var temp = Array.fill(dim)(0)
-      for (i <- 0 until numOfMask) {
-        for (j <- 0 until dim) {
-          temp(j) = temp(j) + testLeft(i) * testTOP(i)(j)
-        }
-      }
-      val testRes = temp.map(x => x.U((2 * bit).W))
 
-      println("testLeft is " + testLeft)
-      println("testTOP is " + testTOP)
-      println("testRes is " + temp.toIndexedSeq)
+      val testRes01 = res01.map(x => x.U((2 * bit).W))
+      val testRes02 = res02.map(x => x.U((2 * bit).W))
+      val testRes03 = res03.map(x => x.U((2 * bit).W))
 
+      val numOfMask = L / 9 + (if (L % 9 == 0) 0 else 1)
+
+      // println("mask is " + mask)
+      println("nums01 is " + nums01)
+      // println("vMatrix is " + vMatrix)
+      println("res01 is " + res01.toIndexedSeq)
+      println("res02 is " + res02.toIndexedSeq)
+      println("res03 is " + res03.toIndexedSeq)
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
+      // first cycle
       dut.clock.step()
 
+      for (i <- 0 until L) {
+        dut.io.nums.bits(i).poke(nums01(i).U)
+        for (j <- 0 until L) {
+          dut.io.mask(i)(j).poke(mask(i)(j).B)
+        }
+        for (m <- 0 until dimV) {
+          dut.io.vMatrix(i)(m).poke(vMatrix(i)(m).U)
+        }
+      }
       dut.io.numOfMask.poke(numOfMask.U)
-      var cnt = 0
-      while (cnt < numOfMask) {
-        dut.io.num.valid.poke(true.B)
-        dut.io.vec.valid.poke(true.B)
-
-        if (dut.io.num.ready.peek().litToBoolean && dut.io.vec.ready.peek().litToBoolean) {
-          dut.io.num.bits.poke(testLeft(cnt).U)
-          for (j <- 0 until dim) {
-            dut.io.vec.bits(j).poke(testTOP(cnt)(j).U)
-          }
-          cnt += 1
-        }
-
-        dut.clock.step()
-
-      }
-      dut.clock.step()
+      dut.io.nums.valid.poke(true.B)
+      dut.io.res.ready.poke(true.B)
+      dut.clock.step(5)
 
       dut.io.res.valid.expect(true.B)
-      dut.io.num.ready.expect(false.B)
-      dut.io.vec.ready.expect(false.B)
-      for (i <- 0 until dim) {
-        dut.io.res.bits(i).expect(testRes(i))
-      }
-
-      // Test for next alu cycle
-
-      dut.clock.step()
-      cnt = 0
-      while (cnt < numOfMask) {
-        dut.io.num.valid.poke(true.B)
-        dut.io.vec.valid.poke(true.B)
-
-        if (dut.io.num.ready.peek().litToBoolean && dut.io.vec.ready.peek().litToBoolean) {
-          dut.io.num.bits.poke(testLeft(cnt).U)
-          for (j <- 0 until dim) {
-            dut.io.vec.bits(j).poke(testTOP(cnt)(j).U)
-          }
-          cnt += 1
-        }
-
-        dut.clock.step()
-
+      for (i <- 0 until dimV) {
+        dut.io.res.bits(i).expect(testRes01(i))
       }
       dut.clock.step()
+
+      // another cycle
+      for (i <- 0 until L) {
+        dut.io.nums.bits(i).poke(nums02(i).U)
+      }
+      dut.io.numOfMask.poke(numOfMask.U)
+      dut.io.nums.valid.poke(true.B)
+      dut.io.res.ready.poke(true.B)
+      dut.clock.step(4)
 
       dut.io.res.valid.expect(true.B)
-      // dut.io.num.ready.expect(false.B)
-      // dut.io.vec.ready.expect(false.B)
-      for (i <- 0 until dim) {
-        dut.io.res.bits(i).expect(testRes(i))
+      for (i <- 0 until dimV) {
+        dut.io.res.bits(i).expect(testRes02(i))
       }
+      dut.clock.step()
+
+      // for last cycle
+      for (i <- 0 until L) {
+        dut.io.nums.bits(i).poke(nums03(i).U)
+      }
+      dut.io.numOfMask.poke(numOfMask.U)
+      dut.io.nums.valid.poke(true.B)
+      dut.io.res.ready.poke(true.B)
+      dut.clock.step(4)
+
+      dut.io.res.valid.expect(true.B)
+      for (i <- 0 until dimV) {
+        dut.io.res.bits(i).expect(testRes03(i))
+      }
+      dut.clock.step()
     }
   }
+
 }
