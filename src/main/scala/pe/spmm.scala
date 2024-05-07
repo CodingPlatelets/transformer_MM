@@ -3,21 +3,6 @@ package pe
 import chisel3._
 import chisel3.util._
 
-object utils {
-  def counter(max: UInt, cond: Bool) = {
-    val x = RegInit(0.U(max.getWidth.W))
-    when(cond) {
-      x := Mux(x === max, 0.U, x + 1.U)
-    }
-    x
-  }
-
-  // this will find the last "one" in an UInt, and then convert it to a one hot num
-  def maskOH(mask: UInt) = {
-    mask - (mask & (mask - 1.U))
-  }
-}
-
 // using PE to do num dot vec
 class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module {
   val io = IO(new Bundle {
