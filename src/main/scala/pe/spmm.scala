@@ -27,7 +27,7 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
     val numOfMask = Input(UInt(8.W))
   })
 
-  val pes = for (i <- 0 until dimV) yield Module(new PE(bit, (index, i), 0))
+  val pes = for (i <- 0 until dimV) yield Module(new PE((2 * bit), (index, i), 0))
   for (i <- 0 until dimV) {
     pes(i).io := DontCare
   }
@@ -73,32 +73,34 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
       }
     }
     is(State.receive) {
-      io.num.ready := true.B
-      io.vec.ready := true.B
-      io.res.valid := false.B
+      when(cnt === 0.U) {
+        io.num.ready := true.B
+        io.vec.ready := true.B
+        io.res.valid := false.B
+      }
 
-      // TODO: maybe it should not wait for a cycle
       when(cnt === io.numOfMask) {
-        state := State.result
+        state := State.receive
+        io.num.ready := false.B
+        io.vec.ready := false.B
+        io.res.valid := true.B
+        io.res.bits := tempRegVec
       }
 
       when(cnt < io.numOfMask && io.num.valid && io.vec.valid) {
         for (i <- 0 until dimV) {
           pes(i).io.controlSign := ControlSignalSel.SPMM
-          pes(i).io.inTop := WireInit(io.vec.bits(i))
-          pes(i).io.inLeft := WireInit(io.num.bits)
-          pes(i).io.inReg := WireInit(tempRegVec(i))
+          pes(i).io.inTop := io.vec.bits(i)
+          pes(i).io.inLeft := io.num.bits
+          pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
           tempRegVec(i) := pes(i).io.outReg
         }
+        // printf("current tempRegVec(0) is %d\n", tempRegVec(0))
+        // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
+        // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
+        // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
+        // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
       }
-    }
-    is(State.result) {
-      io.num.ready := false.B
-      io.vec.ready := false.B
-      io.res.valid := true.B
-      io.res.bits := tempRegVec
-
-      state := State.idle
     }
   }
 }
@@ -125,7 +127,7 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
   numDotVec.io := DontCare
 
   val isValid = WireInit(numDotVec.io.res.valid)
-  val cnt = utils.counter(L.U, isValid)
+  val cnt = utils.counter(L.U - 1.U, isValid)
 
   object State extends ChiselEnum {
     val idle, calculate, result = Value
@@ -158,17 +160,17 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
       }
     }
     is(State.calculate) {
-      // //test
+      //test
       // printf("State is calculate\n")
       // printf("cnt is %d\n", cnt)
       // printf("current numDotVec.num.ready is %d\n", numDotVec.io.num.ready)
       // printf("current numDotVec.vec.ready is %d\n", numDotVec.io.vec.ready)
-      io.res.valid := false.B
 
       when(!numDotVec.io.res.valid && maskReg =/= 0.U) {
         io.nums.ready := true.B
         numDotVec.io.num.valid := true.B
         numDotVec.io.vec.valid := true.B
+        io.res.valid := false.B
 
         numDotVec.io.numOfMask := io.numOfMask
         mask1OH := utils.maskOH(maskReg)
@@ -178,25 +180,23 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
         maskReg := maskReg & (maskReg - 1.U)
       }
 
-      // TODO will wait for numDotVec's last cycle to calculate the last result, so it will wait for a more cycle
-      when(numDotVec.io.res.valid) {
+      when(numDotVec.io.res.valid && cnt < L.U - 1.U) {
+        state := State.calculate
+        io.res.valid := true.B
+        io.res.bits := numDotVec.io.res.bits
+        // printf("State is calculate and continue to calculate\n")
+        maskReg := Mux1H(UIntToOH(cnt), tempMaskReg).asUInt
+        numDotVec.io.res.ready := true.B
+      }
+
+      when(cnt === L.U) {
         state := State.result
-        tempRegVec := numDotVec.io.res.bits
       }
     }
+    // todo: will delete this state
     is(State.result) {
-      when(cnt < L.U) {
-        maskReg := Mux1H(UIntToOH(cnt), tempMaskReg).asUInt
-        // printf("State is result and continue to calculate\n")
-        numDotVec.io.res.ready := true.B
-        io.res.valid := true.B
-        io.res.bits := tempRegVec
-        state := State.calculate
-      }
-      when(cnt === L.U) {
-        // printf("State is result and finished\n")
-        state := State.idle
-      }
+      // printf("State is result and finished\n")
+      state := State.idle
     }
   }
 

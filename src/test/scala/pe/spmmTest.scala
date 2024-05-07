@@ -9,8 +9,8 @@ class spmmTest extends AnyFreeSpec with Matchers {
 
   val bit = 8
   val dimV = 8
-  val L = 15
-  "numDotVec should calculate proper greatest common denominator" in {
+  val L = 28
+  "spmm should calculate in lines" in {
     simulate(new spmm(bit, dimV, L)) { dut =>
       var mask = for (i <- 0 until L) yield for (j <- 0 until L) yield {
         if (j % 9 == 0) true else false
@@ -49,6 +49,7 @@ class spmmTest extends AnyFreeSpec with Matchers {
 
       // println("mask is " + mask)
       println("nums01 is " + nums01)
+      println("numOfMask is " + numOfMask)
       // println("vMatrix is " + vMatrix)
       println("res01 is " + res01.toIndexedSeq)
       println("res02 is " + res02.toIndexedSeq)
@@ -71,43 +72,42 @@ class spmmTest extends AnyFreeSpec with Matchers {
       dut.io.numOfMask.poke(numOfMask.U)
       dut.io.nums.valid.poke(true.B)
       dut.io.res.ready.poke(true.B)
-      dut.clock.step(5)
+      dut.clock.step(numOfMask + 1)
 
       dut.io.res.valid.expect(true.B)
       for (i <- 0 until dimV) {
         dut.io.res.bits(i).expect(testRes01(i))
       }
-      dut.clock.step()
 
       // another cycle
+      dut.clock.step()
       for (i <- 0 until L) {
         dut.io.nums.bits(i).poke(nums02(i).U)
       }
       dut.io.numOfMask.poke(numOfMask.U)
       dut.io.nums.valid.poke(true.B)
       dut.io.res.ready.poke(true.B)
-      dut.clock.step(4)
+      dut.clock.step(numOfMask)
 
       dut.io.res.valid.expect(true.B)
       for (i <- 0 until dimV) {
         dut.io.res.bits(i).expect(testRes02(i))
       }
-      dut.clock.step()
 
       // for last cycle
+      dut.clock.step()
       for (i <- 0 until L) {
         dut.io.nums.bits(i).poke(nums03(i).U)
       }
       dut.io.numOfMask.poke(numOfMask.U)
       dut.io.nums.valid.poke(true.B)
       dut.io.res.ready.poke(true.B)
-      dut.clock.step(4)
+      dut.clock.step(numOfMask)
 
       dut.io.res.valid.expect(true.B)
       for (i <- 0 until dimV) {
         dut.io.res.bits(i).expect(testRes03(i))
       }
-      dut.clock.step()
     }
   }
 
