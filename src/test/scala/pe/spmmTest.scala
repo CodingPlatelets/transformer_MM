@@ -7,7 +7,7 @@ import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.must.Matchers
 class spmmTest extends AnyFreeSpec with Matchers {
 
-  val bit = 8
+  val bit = 16
   val dimV = 8
   val L = 28
   "spmm should calculate in lines" in {
@@ -41,9 +41,9 @@ class spmmTest extends AnyFreeSpec with Matchers {
         }
       }
 
-      val testRes01 = res01.map(x => x.U((2 * bit).W))
-      val testRes02 = res02.map(x => x.U((2 * bit).W))
-      val testRes03 = res03.map(x => x.U((2 * bit).W))
+      val testRes01 = res01.map(x => x.U(bit.W))
+      val testRes02 = res02.map(x => x.U(bit.W))
+      val testRes03 = res03.map(x => x.U(bit.W))
 
       val numOfMask = L / 9 + (if (L % 9 == 0) 0 else 1)
 

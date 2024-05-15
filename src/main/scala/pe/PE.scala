@@ -25,7 +25,7 @@ object ControlSignalSel extends ChiselEnum {
 
 class PE(bit: Int, id: (Int, Int), bufferSize: Int = 0) extends Module {
   val valueType = UInt(bit.W)
-  val resType = UInt((2 * bit).W)
+  val resType = UInt(bit.W)
 
   val io = IO(new Bundle {
     val inTop = Input(valueType)
@@ -48,6 +48,7 @@ class PE(bit: Int, id: (Int, Int), bufferSize: Int = 0) extends Module {
       io.outReg := io.inReg +& (io.inTop * io.inLeft)
 
       // shift left value to right like a Systolic array
+      // TODO delete the design
       io.outRight := RegNext(io.inLeft)
     }
     is(ControlSignalSel.SPMM) {

@@ -8,11 +8,11 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
   val io = IO(new Bundle {
     val num = Flipped(Decoupled(UInt(bit.W)))
     val vec = Flipped(Decoupled((Vec(dimV, UInt(bit.W)))))
-    val res = Decoupled(Vec(dimV, UInt((bit * 2).W)))
+    val res = Decoupled(Vec(dimV, UInt(bit.W)))
     val numOfMask = Input(UInt(8.W))
   })
 
-  val pes = for (i <- 0 until dimV) yield Module(new PE((2 * bit), (index, i), 0))
+  val pes = for (i <- 0 until dimV) yield Module(new PE(bit, (index, i), 0))
   for (i <- 0 until dimV) {
     pes(i).io := DontCare
   }
@@ -39,7 +39,7 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
     val idle, receive, result = Value
   }
 
-  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U((2 * bit).W))))
+  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
 
   val state = RegInit(State.idle)
   val hasData = WireInit(
@@ -100,7 +100,7 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
     val numOfMask = Input(UInt(8.W))
     val vMatrix = Input(Vec(L, Vec(dimV, UInt(bit.W))))
     val nums = Flipped(Decoupled(Vec(L, UInt(bit.W))))
-    val res = Decoupled(Vec(dimV, UInt((2 * bit).W)))
+    val res = Decoupled(Vec(dimV, UInt(bit.W)))
   })
 
   io.nums.ready := DontCare
@@ -126,7 +126,7 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
   val tempMaskReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(L)(false.B))))))
   val tempVMatrixReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W)))))))
 
-  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U((2 * bit).W))))
+  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
   switch(state) {
     is(State.idle) {
       // test

@@ -11,7 +11,8 @@ object TOP extends App {
     // new spmm(8, 4, 7),
     // new counterMux1H,
     // new testMux,
-    new PE(4, (1, 1), 0),
+    // new PE(4, (1, 1), 0),
+    new VecDotVec(8, 32),
     firtoolOpts = Array("-disable-all-randomization")
   )
 
