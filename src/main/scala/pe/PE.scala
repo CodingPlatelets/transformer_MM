@@ -13,10 +13,22 @@ object utils {
     x
   }
 
+  def counter(max: Int, initCond: Bool) = {
+    val x = RegInit(0.U(log2Ceil(max).W))
+    when(initCond && x === 0.U) {
+      x := x + 1.U
+    }.elsewhen(x =/= 0.U) {
+      x := Mux(x === max.U, 0.U, x + 1.U)
+    }
+    x
+  }
+
   // this will find the last "one" in an UInt, and then convert it to a one hot num
   def maskOH(mask: UInt) = {
     mask - (mask & (mask - 1.U))
   }
+
+  val maskType = 16
 }
 
 object ControlSignalSel extends ChiselEnum {

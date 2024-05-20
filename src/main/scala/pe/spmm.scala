@@ -126,7 +126,6 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
   val tempMaskReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(L)(false.B))))))
   val tempVMatrixReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W)))))))
 
-  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
   switch(state) {
     is(State.idle) {
       // test
