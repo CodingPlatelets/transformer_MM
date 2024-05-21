@@ -8,12 +8,13 @@ object TOP extends App {
     //    new SeqDotVecs(3,8),
     //  new VecDotVec(8),
     // new NumDotVec(4, 1, 4),
-    // new spmm(8, 4, 7),
+    new SpMM(8, 8, 7, 3, 10),
     // new counterMux1H,
     // new testMux,
     // new PE(4, (1, 1), 0),
     // new VecDotVec(8, 32),
-    new sddmm(16, 8, 28, 4),
+    // new sddmm(16, 8, 28, 4),
+    // new ValidReady,
     firtoolOpts = Array("-disable-all-randomization")
   )
 

@@ -3,14 +3,16 @@ package pe
 import chisel3._
 import chisel3.util._
 import dataclass.data
+import os.read
 
 // using PE to do num dot vec
-class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32, val numOfMask: Int, val queueSize: Int = 2)
+class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32, val numOfMask: Int, val queueSize: Int = 10)
     extends Module {
   val io = IO(new Bundle {
     val num = Flipped(Decoupled(UInt(bit.W)))
     val vec = Flipped(Decoupled((Vec(dimV, UInt(bit.W)))))
     val res = Decoupled(Vec(dimV, UInt(bit.W)))
+    val ready = Output(Bool())
   })
 
   val pes = for (i <- 0 until dimV) yield Module(new PE(bit, (index, i), 0))
@@ -27,6 +29,8 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32, val numOfMask:
   val state = RegInit(State.idle)
   io.num.ready := state === State.send && resQueue.io.enq.ready
   io.vec.ready := state === State.send && resQueue.io.enq.ready
+
+  io.ready := resQueue.io.enq.ready
 
   object State extends ChiselEnum {
     val idle, send = Value
@@ -92,93 +96,116 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32, val numOfMask:
 // using mask to choose the needed nums
 // to find one's position, using n - n & (n-1) and than one hot to int
 // a row of a L x L matrix with mask select the needed nums will dot the specific row of the V matrix selected by the same mask
-class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numOfMask: Int) extends Module {
+class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numOfMask: Int, val queueSize: Int = 10)
+    extends Module {
   val io = IO(new Bundle {
-    val mask = Input(Vec(L, Vec(L, Bool())))
-    val numOfMask = Input(UInt(8.W))
-    val vMatrix = Input(Vec(L, Vec(dimV, UInt(bit.W))))
+    val inMask = Flipped(Decoupled(Vec(numOfMask, UInt(utils.maskType.W))))
     val nums = Flipped(Decoupled(Vec(L, UInt(bit.W))))
+    val vMatrix = Input(Vec(L, Vec(dimV, UInt(bit.W))))
     val res = Decoupled(Vec(dimV, UInt(bit.W)))
+    val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
   })
 
-  io.nums.ready := DontCare
-  io.res.valid := DontCare
-  io.res.bits := DontCare
+  // // TODO will generate more ALUs through alu param
+  // val numDotVec = Module(new NumDotVec(bit, alu, dimV, numOfMask, queueSize))
+  // numDotVec.io.num := DontCare
+  // numDotVec.io.vec := DontCare
+  // numDotVec.io.res <> io.res
 
-  // TODO will generate more ALUs through alu param
-  val numDotVec = Module(new NumDotVec(bit, alu, dimV, numOfMask))
-  numDotVec.io := DontCare
+  // val dataValid = io.nums.valid && io.inMask.valid
+  // val dataProduce = dataValid && io.res.ready && io.outMask.ready
+  // val dataCal = dataValid && numDotVec.io.ready
 
-  val isValid = WireInit(numDotVec.io.res.valid)
-  val cnt = utils.counter(L.U - 1.U, isValid)
+  // val (cnt, cntT) = Counter(0 until numOfMask, numDotVec.io.num.ready && numDotVec.io.vec.ready)
 
-  object State extends ChiselEnum {
-    val idle, calculate, result = Value
+  // val isConsumed = WireInit(cntT)
+
+  // val firstCycle = RegInit(true.B)
+
+  // when(dataCal) {
+  //   io.nums.ready := true.B
+  //   io.inMask.ready := true.B
+  //   numDotVec.io.num.valid := true.B
+  //   numDotVec.io.vec.valid := true.B
+  //   numDotVec.io.num.bits := io.nums.bits(maskReg(cnt))
+  //   numDotVec.io.vec.bits := Mux(firstCycle, io.vMatrix(maskReg(cnt)), vMatrixReg(maskReg(cnt)))
+  //   firstCycle := false.B
+  // }
+
+  val numsQueue = Module(new Queue(Vec(L, UInt(bit.W)), queueSize, pipe = true, flow = true))
+  val inMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
+  val outMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
+  val resQueue = Module(new Queue(Vec(dimV, UInt(bit.W)), queueSize, pipe = true, flow = true))
+
+  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
+  // val pes = VecInit(Seq.fill(dimV)(Module(new PE(bit, (0, 0), 0)).io))
+  val pes = for (i <- 0 until dimV) yield Module(new PE(bit, (0, 0), 0))
+  for (i <- 0 until dimV) {
+    pes(i).io := DontCare
   }
 
-  val state = RegInit(State.idle)
+  numsQueue.io.deq := DontCare
+  inMaskQueue.io.deq := DontCare
+  outMaskQueue.io.enq := DontCare
+  resQueue.io.enq := DontCare
 
-  // origin mask number
-  val maskReg = RegInit(0.U(L.W))
-  val mask1OH = WireInit(0.U(L.W))
-  val tempMaskReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(L)(false.B))))))
-  val tempVMatrixReg = RegInit(VecInit((Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W)))))))
+  io.inMask <> inMaskQueue.io.enq
+  io.nums <> numsQueue.io.enq
+  io.res <> resQueue.io.deq
+  io.outMask <> outMaskQueue.io.deq
 
-  switch(state) {
-    is(State.idle) {
-      // test
-      // printf("State is idle\n")
+  val maskReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
+  val numsReg = RegInit(VecInit(Seq.fill(L)(0.U(bit.W))))
+  val vMatrixReg = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W))))))
+  vMatrixReg := io.vMatrix
 
-      io.res.valid := false.B
-      io.nums.ready := false.B
-      numDotVec.io.num.valid := false.B
-      numDotVec.io.vec.valid := false.B
-      maskReg := Mux1H(UIntToOH(cnt), io.mask).asUInt
-      tempMaskReg := io.mask
-      tempVMatrixReg := io.vMatrix
+  val queueValid = WireInit(inMaskQueue.io.deq.valid && numsQueue.io.deq.valid)
+  val queueReady = WireInit(outMaskQueue.io.enq.ready && resQueue.io.enq.ready)
+  val isCalculated = RegInit(false.B)
 
-      when(cnt === 0.U && io.nums.valid && numDotVec.io.num.ready && numDotVec.io.vec.ready) {
-        state := State.calculate
-      }
+  when(queueValid && queueReady && !isCalculated) {
+    maskReg := inMaskQueue.io.deq.bits
+    numsReg := numsQueue.io.deq.bits
+
+    numsQueue.io.deq.ready := true.B
+    inMaskQueue.io.deq.ready := true.B
+    isCalculated := true.B
+  }.otherwise {
+    inMaskQueue.io.deq.ready := false.B
+    numsQueue.io.deq.ready := false.B
+  }
+
+  val (cnt, warp) = Counter(0 until numOfMask, isCalculated)
+  // printf("current cnt is %d\n", cnt)
+  // printf("current tempRegVec(0) is %d\n", tempRegVec(0))
+  // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
+  // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
+  // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
+  // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
+  // printf("current outQueue Count is %d\n", resQueue.io.count)
+  // printf("current inQueue Count is %d\n", numsQueue.io.count)
+  // printf("\n")
+
+  when(isCalculated && !warp) {
+    outMaskQueue.io.enq.valid := false.B
+    resQueue.io.enq.valid := false.B
+    for (i <- 0 until dimV) {
+      pes(i).io.controlSign := ControlSignalSel.SPMM
+      pes(i).io.inTop := io.vMatrix(maskReg(cnt))(i)
+      pes(i).io.inLeft := numsReg(maskReg(cnt))
+      pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
+      tempRegVec(i) := pes(i).io.outReg
     }
-    is(State.calculate) {
-      //test
-      // printf("State is calculate\n")
-      // printf("cnt is %d\n", cnt)
-      // printf("current numDotVec.num.ready is %d\n", numDotVec.io.num.ready)
-      // printf("current numDotVec.vec.ready is %d\n", numDotVec.io.vec.ready)
+  }
 
-      when(!numDotVec.io.res.valid && maskReg =/= 0.U) {
-        io.nums.ready := true.B
-        numDotVec.io.num.valid := true.B
-        numDotVec.io.vec.valid := true.B
-        io.res.valid := false.B
-
-        mask1OH := utils.maskOH(maskReg)
-
-        numDotVec.io.num.bits := Mux1H(mask1OH, io.nums.bits)
-        numDotVec.io.vec.bits := Mux1H(mask1OH, tempVMatrixReg)
-        maskReg := maskReg & (maskReg - 1.U)
-      }
-
-      when(numDotVec.io.res.valid && cnt < L.U - 1.U) {
-        state := State.calculate
-        io.res.valid := true.B
-        io.res.bits := numDotVec.io.res.bits
-        // printf("State is calculate and continue to calculate\n")
-        maskReg := Mux1H(UIntToOH(cnt), tempMaskReg).asUInt
-        numDotVec.io.res.ready := true.B
-      }
-
-      when(cnt === L.U) {
-        state := State.result
-      }
+  when(warp) {
+    resQueue.io.enq.valid := true.B
+    for (i <- 0 until dimV) {
+      resQueue.io.enq.bits(i) := pes(i).io.outReg
     }
-    // todo: will delete this state
-    is(State.result) {
-      // printf("State is result and finished\n")
-      state := State.idle
-    }
+    outMaskQueue.io.enq.bits := maskReg
+    outMaskQueue.io.enq.valid := true.B
+    isCalculated := false.B
   }
 
 }

@@ -5,109 +5,158 @@ import chisel3._
 import chisel3.simulator.EphemeralSimulator._
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.must.Matchers
-class spmmTest extends AnyFreeSpec with Matchers {
+class SpmmTest extends AnyFreeSpec with Matchers {
 
   val bit = 16
   val dimV = 8
   val L = 28
+  val numOfMask = 3
+  val queueSize = 10
   "spmm should calculate in lines" in {
-    simulate(new spmm(bit, dimV, L)) { dut =>
-      var mask = for (i <- 0 until L) yield for (j <- 0 until L) yield {
-        if (j % 9 == 0) true else false
-      }
+    simulate(new SpMM(bit, dimV, L, 1, numOfMask, queueSize)) { dut =>
+      var mask1 = Seq(1, 2, 3)
+      var mask2 = Seq(1, 4, 6)
+      var mask3 = Seq(2, 3, 7)
+      var mask = Seq(mask1, mask2, mask3)
 
-      var nums01 = for (i <- 0 until L) yield { if (i % 9 == 0) i + (i + 1) else 0 }
-      var nums02 = for (i <- 0 until L) yield { if (i % 9 == 0) 5 + (i * 2) else 0 }
-      var nums03 = for (i <- 0 until L) yield { if (i % 9 == 0) 4 + (i * 3) else 0 }
-
-      var vMatrix = for (i <- 1 to L) yield {
-        if ((i - 1) % 9 == 0) for (j <- 1 to dimV) yield {
-          2 * i + j
-        }
-        else for (j <- 1 to dimV) yield 0
-      }
+      val testV = for (i <- 0 until L) yield for (j <- 0 until dimV) yield (i + j)
+      val testNum = for (i <- 1 to L) yield (i * 2)
 
       var res01 = Array.fill(dimV)(0)
       var res02 = Array.fill(dimV)(0)
       var res03 = Array.fill(dimV)(0)
 
-      for (i <- 0 until L) {
-        if (i % 9 == 0) {
-          for (j <- 0 until dimV) {
-            res01(j) = res01(j) + nums01(i) * vMatrix(i)(j)
-            res02(j) = res02(j) + nums02(i) * vMatrix(i)(j)
-            res03(j) = res03(j) + nums03(i) * vMatrix(i)(j)
-          }
+      for (i <- 0 until numOfMask) {
+        for (j <- 0 until dimV) {
+          res01(j) = res01(j) + testNum(mask1(i)) * testV(mask1(i))(j)
+          res02(j) = res02(j) + testNum(mask2(i)) * testV(mask2(i))(j)
+          res03(j) = res03(j) + testNum(mask3(i)) * testV(mask3(i))(j)
         }
       }
+      val res = Seq(res01, res02, res03)
 
-      val testRes01 = res01.map(x => x.U(bit.W))
-      val testRes02 = res02.map(x => x.U(bit.W))
-      val testRes03 = res03.map(x => x.U(bit.W))
-
-      val numOfMask = L / 9 + (if (L % 9 == 0) 0 else 1)
-
-      // println("mask is " + mask)
-      println("nums01 is " + nums01)
-      println("numOfMask is " + numOfMask)
-      // println("vMatrix is " + vMatrix)
+      println("mask0 is " + mask)
+      println("vMatrix is " + testV)
+      println("nums is " + testNum)
       println("res01 is " + res01.toIndexedSeq)
       println("res02 is " + res02.toIndexedSeq)
       println("res03 is " + res03.toIndexedSeq)
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
-      // first cycle
       dut.clock.step()
-
       for (i <- 0 until L) {
-        dut.io.nums.bits(i).poke(nums01(i).U)
-        for (j <- 0 until L) {
-          dut.io.mask(i)(j).poke(mask(i)(j).B)
-        }
         for (m <- 0 until dimV) {
-          dut.io.vMatrix(i)(m).poke(vMatrix(i)(m).U)
+          dut.io.vMatrix(i)(m).poke(testV(i)(m).U)
         }
       }
-      dut.io.numOfMask.poke(numOfMask.U)
-      dut.io.nums.valid.poke(true.B)
-      dut.io.res.ready.poke(true.B)
-      dut.clock.step(numOfMask + 1)
-
-      dut.io.res.valid.expect(true.B)
-      for (i <- 0 until dimV) {
-        dut.io.res.bits(i).expect(testRes01(i))
-      }
-
-      // another cycle
       dut.clock.step()
-      for (i <- 0 until L) {
-        dut.io.nums.bits(i).poke(nums02(i).U)
-      }
-      dut.io.numOfMask.poke(numOfMask.U)
-      dut.io.nums.valid.poke(true.B)
-      dut.io.res.ready.poke(true.B)
-      dut.clock.step(numOfMask)
 
-      dut.io.res.valid.expect(true.B)
-      for (i <- 0 until dimV) {
-        dut.io.res.bits(i).expect(testRes02(i))
+      var cnt = 0
+      while (cnt < numOfMask) {
+        if (dut.io.inMask.ready.peek().litToBoolean && dut.io.nums.ready.peek().litToBoolean) {
+          dut.io.inMask.valid.poke(true.B)
+          dut.io.nums.valid.poke(true.B)
+          for (i <- 0 until L) {
+            dut.io.nums.bits(i).poke(testNum(i).U)
+          }
+          for (i <- 0 until numOfMask) {
+            dut.io.inMask.bits(i).poke(mask(cnt)(i).U)
+          }
+          cnt = cnt + 1
+        }
+        dut.clock.step()
       }
+      dut.io.inMask.valid.poke(false.B)
+      dut.io.nums.valid.poke(false.B)
 
-      // for last cycle
-      dut.clock.step()
-      for (i <- 0 until L) {
-        dut.io.nums.bits(i).poke(nums03(i).U)
+      cnt = 0
+      while (cnt < numOfMask) {
+        dut.io.res.ready.poke(false.B)
+        if (dut.io.res.valid.peek().litToBoolean) {
+          for (i <- 0 until dimV) {
+            dut.io.res.bits(i).expect(res(cnt)(i).U)
+          }
+          dut.io.outMask.valid.expect(true.B)
+          for (i <- 0 until numOfMask) {
+            dut.io.outMask.bits(i).expect(mask(cnt)(i).U)
+          }
+          dut.io.res.ready.poke(true.B)
+          dut.io.outMask.ready.poke(true.B)
+          cnt = cnt + 1
+        }
+        dut.clock.step()
       }
-      dut.io.numOfMask.poke(numOfMask.U)
-      dut.io.nums.valid.poke(true.B)
-      dut.io.res.ready.poke(true.B)
-      dut.clock.step(numOfMask)
+      dut.io.res.ready.poke(false.B)
+      dut.io.outMask.ready.poke(false.B)
 
-      dut.io.res.valid.expect(true.B)
-      for (i <- 0 until dimV) {
-        dut.io.res.bits(i).expect(testRes03(i))
-      }
+    // for (i <- 0 until L) {
+    //   dut.io.nums.bits(i).poke(testNum(i).U)
+    //   for (m <- 0 until dimV) {
+    //     dut.io.vMatrix(i)(m).poke(testV(i)(m).U)
+    //   }
+    // }
+
+    // for (i <- 0 until numOfMask) {
+    //   dut.io.inMask.bits(i).poke(mask(i).U)
+    // }
+
+    // dut.clock.step()
+    // dut.io.inMask.valid.poke(true.B)
+    // dut.io.nums.valid.poke(true.B)
+    // dut.clock.step(1)
+    // dut.io.inMask.valid.poke(false.B)
+    // dut.io.nums.valid.poke(false.B)
+    // dut.clock.step(dimV - 1)
+
+    // dut.io.res.valid.expect(true.B)
+    // for (i <- 0 until dimV) {
+    //   dut.io.res.bits(i).expect(res01(i))
+    // }
+    // dut.io.res.ready.poke(true.B)
+
+    // // another cycle
+    // for (i <- 0 until L) {
+    //   dut.io.nums.bits(i).poke(testNum(i).U)
+    // }
+
+    // for (i <- 0 until numOfMask) {
+    //   dut.io.inMask.bits(i).poke(mask2(i).U)
+    // }
+    // dut.clock.step()
+    // dut.io.nums.valid.poke(true.B)
+    // dut.io.inMask.valid.poke(true.B)
+    // dut.io.res.ready.poke(false.B)
+
+    // dut.clock.step()
+
+    // for (i <- 0 until L) {
+    //   dut.io.nums.bits(i).poke(testNum(i).U)
+    // }
+
+    // for (i <- 0 until numOfMask) {
+    //   dut.io.inMask.bits(i).poke(mask3(i).U)
+    // }
+    // dut.io.inMask.valid.poke(false.B)
+    // dut.io.nums.valid.poke(false.B)
+
+    // dut.clock.step(dimV - 2)
+    // dut.io.res.valid.expect(true.B)
+    // for (i <- 0 until dimV) {
+    //   dut.io.res.bits(i).expect(res02(i).U)
+    // }
+    // dut.io.res.ready.poke(true.B)
+
+    // // for last cycle
+
+    // dut.clock.step()
+    // dut.io.res.ready.poke(false.B)
+    // dut.clock.step()
+    // dut.io.res.valid.expect(true.B)
+    // for (i <- 0 until dimV) {
+    //   dut.io.res.bits(i).expect(res03(i))
+    // }
+    // dut.io.res.ready.poke(true.B)
     }
   }
 
