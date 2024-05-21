@@ -2,14 +2,15 @@ package pe
 
 import chisel3._
 import chisel3.util._
+import dataclass.data
 
 // using PE to do num dot vec
-class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module {
+class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32, val numOfMask: Int, val queueSize: Int = 2)
+    extends Module {
   val io = IO(new Bundle {
     val num = Flipped(Decoupled(UInt(bit.W)))
     val vec = Flipped(Decoupled((Vec(dimV, UInt(bit.W)))))
     val res = Decoupled(Vec(dimV, UInt(bit.W)))
-    val numOfMask = Input(UInt(8.W))
   })
 
   val pes = for (i <- 0 until dimV) yield Module(new PE(bit, (index, i), 0))
@@ -17,62 +18,56 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
     pes(i).io := DontCare
   }
 
-  io.res := DontCare
-  io.vec.ready := DontCare
-  io.num.ready := DontCare
+  // generate a result queue with 2 places to store the final result
+  val resQueue = Module(new Queue(Vec(dimV, UInt(bit.W)), queueSize, pipe = true, flow = true))
+  io.res <> resQueue.io.deq
+  resQueue.io.enq.valid := false.B
+  resQueue.io.enq.bits := DontCare
 
-  /** Generate a FSM to receive all num and vec in n cycles and then use PE to
-    * calculate the result.
-    *
-    * The rules are as follows:
-    *
-    * idle: when counter = 0 turn state to receive.
-    *
-    * receive: when counter < numOfMask: turn num and vec to ready then receive
-    * their data when counter = numOfMask: turn the state -> result
-    *
-    * result: turn the num and vec's ready to false and turn the res.valid to
-    * true and res.bits to the result then turn the state to idle
-    */
+  val state = RegInit(State.idle)
+  io.num.ready := state === State.send && resQueue.io.enq.ready
+  io.vec.ready := state === State.send && resQueue.io.enq.ready
 
   object State extends ChiselEnum {
-    val idle, receive, result = Value
+    val idle, send = Value
   }
 
   val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
 
-  val state = RegInit(State.idle)
-  val hasData = WireInit(
-    state === State.receive && io.num.valid && io.vec.valid
-  )
-  val cnt = utils.counter(io.numOfMask, hasData)
+  val dataValid = WireInit(io.num.valid && io.vec.valid)
+  val dataFire = WireInit(io.num.fire && io.vec.fire)
+
+  val produceData = WireInit(dataValid && resQueue.io.enq.ready)
+
+  val (cnt, cntT) = Counter(0 until numOfMask, state === State.send && produceData)
 
   switch(state) {
     is(State.idle) {
-      for (i <- 0 until dimV) {
-        tempRegVec(i) := 0.U
-      }
-      io.res.valid := false.B
-      when(cnt === 0.U) {
-        state := State.receive
+      when(produceData) {
+        state := State.send
       }
     }
-    is(State.receive) {
-      when(cnt === 0.U) {
-        io.num.ready := true.B
-        io.vec.ready := true.B
-        io.res.valid := false.B
+    is(State.send) {
+      when(cnt === 0.U && !dataFire) {
+        state := State.idle
       }
 
-      when(cnt === io.numOfMask) {
-        state := State.receive
-        io.num.ready := false.B
-        io.vec.ready := false.B
-        io.res.valid := true.B
-        io.res.bits := tempRegVec
+      when(cntT) {
+        when(produceData) {
+          state := State.send
+        }.otherwise {
+          state := State.idle
+          io.num.ready := false.B
+          io.vec.ready := false.B
+        }
+
+        resQueue.io.enq.valid := true.B
+        for (i <- 0 until dimV) {
+          resQueue.io.enq.bits(i) := pes(i).io.outReg
+        }
       }
 
-      when(cnt < io.numOfMask && io.num.valid && io.vec.valid) {
+      when((!cntT) && dataFire) {
         for (i <- 0 until dimV) {
           pes(i).io.controlSign := ControlSignalSel.SPMM
           pes(i).io.inTop := io.vec.bits(i)
@@ -80,12 +75,15 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
           pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
           tempRegVec(i) := pes(i).io.outReg
         }
-        // printf("current tempRegVec(0) is %d\n", tempRegVec(0))
-        // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
-        // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
-        // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
-        // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
       }
+
+      // printf("current cnt is %d\n", cnt)
+      // printf("current tempRegVec(0) is %d\n", tempRegVec(0))
+      // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
+      // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
+      // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
+      // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
+      // printf("\n")
     }
   }
 }
@@ -94,7 +92,7 @@ class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32) extends Module
 // using mask to choose the needed nums
 // to find one's position, using n - n & (n-1) and than one hot to int
 // a row of a L x L matrix with mask select the needed nums will dot the specific row of the V matrix selected by the same mask
-class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends Module {
+class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numOfMask: Int) extends Module {
   val io = IO(new Bundle {
     val mask = Input(Vec(L, Vec(L, Bool())))
     val numOfMask = Input(UInt(8.W))
@@ -108,7 +106,7 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
   io.res.bits := DontCare
 
   // TODO will generate more ALUs through alu param
-  val numDotVec = Module(new NumDotVec(bit, alu, dimV))
+  val numDotVec = Module(new NumDotVec(bit, alu, dimV, numOfMask))
   numDotVec.io := DontCare
 
   val isValid = WireInit(numDotVec.io.res.valid)
@@ -156,7 +154,6 @@ class spmm(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1) extends 
         numDotVec.io.vec.valid := true.B
         io.res.valid := false.B
 
-        numDotVec.io.numOfMask := io.numOfMask
         mask1OH := utils.maskOH(maskReg)
 
         numDotVec.io.num.bits := Mux1H(mask1OH, io.nums.bits)
