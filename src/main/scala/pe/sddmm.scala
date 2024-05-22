@@ -109,7 +109,8 @@ class VecDotVec(val index: Int = 0, val bit: Int, val D: Int) extends Module {
 }
 
 // todo: cannot create pes dynamically, so we must fix the numOfMask, but we can set a min numOfMask and schedule it in the future
-class sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4) extends Module {
+class sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4, val queueSize: Int = 10)
+    extends Module {
   val io = IO(new Bundle {
     val inMask = Flipped(Decoupled(Vec(numOfMask, UInt(utils.maskType.W))))
     val qVec = Flipped(Decoupled(Vec(D, UInt(bit.W))))
@@ -119,127 +120,79 @@ class sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4)
     val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
   })
 
-  io := DontCare
-  io.res.bits := VecInit(Seq.fill(L)(0.U(bit.W)))
+  val qVecQueue = Module(new Queue(Vec(D, UInt(bit.W)), queueSize, pipe = true, flow = true))
+  val inMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
+  val outMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
+  val resQueue = Module(new Queue(Vec(L, UInt(bit.W)), queueSize, pipe = true, flow = true))
 
-  val temKReg = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(D)(0.U(bit.W))))))
-  temKReg := io.kMatrix
+  io.inMask <> inMaskQueue.io.enq
+  io.qVec <> qVecQueue.io.enq
+  io.outMask <> outMaskQueue.io.deq
+  io.res <> resQueue.io.deq
 
-  val vecPe = for {
-    i <- 0 until numOfMask
-  } yield Module(new VecDotVec(i, bit, D))
+  inMaskQueue.io.deq := DontCare
+  qVecQueue.io.deq := DontCare
+  outMaskQueue.io.enq := DontCare
+  resQueue.io.enq := DontCare
 
+  val pes = for (i <- 0 until numOfMask) yield Module(new PE(bit, (i, 0), 0))
   for (i <- 0 until numOfMask) {
-    vecPe(i).io := DontCare
+    pes(i).io := DontCare
+  }
+  val tempReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(bit.W))))
+  val tempK = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(D)(0.U(bit.W))))))
+  tempK := io.kMatrix
+
+  val dataValid = WireInit(inMaskQueue.io.deq.valid && qVecQueue.io.deq.valid)
+  val dataReady = WireInit(outMaskQueue.io.enq.ready && resQueue.io.enq.ready)
+
+  val tempQ = RegInit(VecInit(Seq.fill(D)(0.U(bit.W))))
+  val tempMask = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
+
+  val isCalculated = RegInit(false.B)
+  when(dataReady && dataValid && !isCalculated) {
+    tempQ := qVecQueue.io.deq.bits
+    tempMask := inMaskQueue.io.deq.bits
+    qVecQueue.io.deq.ready := true.B
+    inMaskQueue.io.deq.ready := true.B
+    isCalculated := true.B
+  }.otherwise {
+    inMaskQueue.io.deq.ready := false.B
+    qVecQueue.io.deq.ready := false.B
   }
 
-  // subModule ready or not
-  val vecPeValid = VecInit(vecPe.map(_.io.res.valid)).reduceTree(_ & _)
-  val vecPeQReady = VecInit(vecPe.map(_.io.rowQ.ready)).reduceTree(_ & _)
-  val vecPeKReady = VecInit(vecPe.map(_.io.colK.ready)).reduceTree(_ & _)
-  val tempQReg = RegInit(VecInit(Seq.fill(D)(0.U(bit.W))))
-  val fromSend = RegInit(false.B)
+  val (cnt, warp) = Counter(0 until D, isCalculated)
 
-  val tempMaskReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
-
-  object State extends ChiselEnum {
-    val idle, calculate, result = Value
-  }
-
-  val state = RegInit(State.idle)
-  val tempResReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(bit.W))))
-
-  when(io.inMask.valid && io.qVec.valid) {
-    tempMaskReg := io.inMask.bits
-    tempQReg := io.qVec.bits
-  }
-
-  // the bits will only send in one cycle
-  when(io.res.ready && io.outMask.ready && io.res.valid && io.outMask.valid) {
-    io.res.valid := false.B
-    io.outMask.valid := false.B
-  }
-
-  io.inMask.ready := vecPeQReady & vecPeKReady & !io.res.valid
-  io.qVec.ready := vecPeQReady & vecPeKReady & !io.res.valid
-
-  // then bits will only send in one cycle to submodule
-  for (i <- 0 until numOfMask) {
-    when(vecPe(i).io.rowQ.valid && vecPe(i).io.rowQ.ready) {
-      vecPe(i).io.rowQ.valid := false.B
-    }
-    when(vecPe(i).io.colK.valid && vecPe(i).io.colK.ready) {
-      vecPe(i).io.colK.valid := false.B
+  when(isCalculated && !warp) {
+    outMaskQueue.io.enq.valid := false.B
+    resQueue.io.enq.valid := false.B
+    for (i <- 0 until numOfMask) {
+      pes(i).io.inLeft := tempQ(cnt)
+      pes(i).io.inTop := tempK(tempMask(i))(cnt)
+      pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempReg(i))
+      pes(i).io.controlSign := ControlSignalSel.SDDMM
+      tempReg(i) := pes(i).io.outReg
     }
   }
 
-  switch(state) {
-    is(State.idle) {
-      when(io.inMask.valid && io.qVec.valid) {
-        state := State.calculate
-      }
-      for (i <- 0 until numOfMask) {
-        vecPe(i).io.rowQ.valid := false.B
-        vecPe(i).io.colK.valid := false.B
-      }
+  when(warp) {
+    for (i <- 0 until numOfMask) {
+      resQueue.io.enq.bits(tempMask(i)) := pes(i).io.outReg
     }
-
-    is(State.calculate) {
-      printf("vecPeValid is %d\n", vecPeValid)
-
-      // printf("Whether change to result: mask is %d, qvec is %d \n", io.inMask.valid, io.qVec.valid)
-      // printf("vecPeQR and vecPeKR is: %d, %d \n", vecPeQReady, vecPeKReady)
-
-      when(vecPeValid && fromSend) {
-        fromSend := false.B
-        io.res.valid := true.B
-        // printf("temResReg(0) is %d \n", tempResReg(0))
-        for (i <- 0 until numOfMask) {
-          io.res.bits(tempMaskReg(i)) := vecPe(i).io.res.bits
-          tempResReg(i) := vecPe(i).io.res.bits
-          vecPe(i).io.res.ready := true.B
-        }
-
-        io.outMask.valid := true.B
-        io.outMask.bits := tempMaskReg
-
-        when(io.inMask.valid && io.qVec.valid) {
-          printf("recal is begin\n")
-          state := State.calculate
-        }.otherwise { state := State.result }
-
-      }
-
-      when(vecPeQReady && vecPeKReady) {
-        fromSend := true.B
-        io.res.valid := false.B
-        io.outMask.valid := false.B
-        printf("cal is begin\n")
-        for (i <- 0 until numOfMask) {
-          vecPe(i).io.rowQ.valid := true.B
-          vecPe(i).io.colK.valid := true.B
-          vecPe(i).io.rowQ.bits := io.qVec.bits
-          vecPe(i).io.colK.bits := temKReg(tempMaskReg(i))
-        }
-      }
-    }
-
-    is(State.result) {
-      printf("sddmm result\n")
-      when(io.inMask.valid && io.qVec.valid) {
-        state := State.calculate
-      }
-      for (i <- 0 until numOfMask) {
-        vecPe(i).io.rowQ.valid := false.B
-        vecPe(i).io.colK.valid := false.B
-      }
-      io.res.valid := true.B
-      for (i <- 0 until numOfMask) {
-        io.res.bits(tempMaskReg(i)) := tempResReg(i)
-      }
-      io.outMask.valid := true.B
-      io.outMask.bits := tempMaskReg
-
-    }
+    outMaskQueue.io.enq.bits := tempMask
+    resQueue.io.enq.valid := true.B
+    outMaskQueue.io.enq.valid := true.B
+    isCalculated := false.B
   }
+
+  // printf("current cnt is %d\n", cnt)
+  // printf("current tempRegVec(0) is %d\n", tempReg(0))
+  // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
+  // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
+  // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
+  // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
+  // printf("current outQueue Count is %d\n", resQueue.io.count)
+  // printf("current inQueue Count is %d\n", qVecQueue.io.count)
+  // printf("\n")
+
 }

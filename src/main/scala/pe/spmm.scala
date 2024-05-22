@@ -106,32 +106,6 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
     val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
   })
 
-  // // TODO will generate more ALUs through alu param
-  // val numDotVec = Module(new NumDotVec(bit, alu, dimV, numOfMask, queueSize))
-  // numDotVec.io.num := DontCare
-  // numDotVec.io.vec := DontCare
-  // numDotVec.io.res <> io.res
-
-  // val dataValid = io.nums.valid && io.inMask.valid
-  // val dataProduce = dataValid && io.res.ready && io.outMask.ready
-  // val dataCal = dataValid && numDotVec.io.ready
-
-  // val (cnt, cntT) = Counter(0 until numOfMask, numDotVec.io.num.ready && numDotVec.io.vec.ready)
-
-  // val isConsumed = WireInit(cntT)
-
-  // val firstCycle = RegInit(true.B)
-
-  // when(dataCal) {
-  //   io.nums.ready := true.B
-  //   io.inMask.ready := true.B
-  //   numDotVec.io.num.valid := true.B
-  //   numDotVec.io.vec.valid := true.B
-  //   numDotVec.io.num.bits := io.nums.bits(maskReg(cnt))
-  //   numDotVec.io.vec.bits := Mux(firstCycle, io.vMatrix(maskReg(cnt)), vMatrixReg(maskReg(cnt)))
-  //   firstCycle := false.B
-  // }
-
   val numsQueue = Module(new Queue(Vec(L, UInt(bit.W)), queueSize, pipe = true, flow = true))
   val inMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
   val outMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
