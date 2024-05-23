@@ -82,14 +82,14 @@ class VecDotVec(val index: Int = 0, val bit: Int, val D: Int) extends Module {
         tempReg := pe.io.outReg
       }
 
-      printf(
-        "pe(%d) in cycle %d, left is %d, top is %d, temReg is %d\n",
-        index.U,
-        cnt,
-        pe.io.inLeft,
-        pe.io.inTop,
-        tempReg
-      )
+      // printf(
+      //   "pe(%d) in cycle %d, left is %d, top is %d, temReg is %d\n",
+      //   index.U,
+      //   cnt,
+      //   pe.io.inLeft,
+      //   pe.io.inTop,
+      //   tempReg
+      // )
     }
 
     is(State.result) {

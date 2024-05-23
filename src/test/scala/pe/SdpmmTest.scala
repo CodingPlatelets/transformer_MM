@@ -9,7 +9,7 @@ class SdpmmTest extends AnyFreeSpec with Matchers {
   val bit = 32
   val dimV = 36
   val L = 40
-  val numOfMask = 2
+  val numOfMask = 4
   val queueSize = 5
   "sdpmm should calculate in lines" in {
     simulate(new sdpmm(bit, dimV, L, numOfMask, queueSize)) { dut =>
