@@ -30,52 +30,10 @@ object utils {
 
   val maskType = 16
 }
-class PipelineProducer extends Module {
-  val io = IO(new Bundle {
-    val a = Flipped(DecoupledIO(UInt(8.W)))
-    val b = DecoupledIO(UInt(8.W))
-  })
 
-  val (cnt, cntT) = Counter(true.B, 1)
-  val result = Reg(UInt(8.W))
-
-  io.a.ready := RegInit(io.a.valid) & cnt === 0.U
-  result := io.a.bits + 1.U
-
-  io.b.valid := RegInit(io.b.ready) & cntT
-  io.b.bits := result
-
-}
-
-class PipelineConsumer extends Module {
-  val io = IO(new Bundle {
-    val a = Flipped(DecoupledIO(UInt(8.W)))
-    val b = DecoupledIO(UInt(8.W))
-  })
-
-  val (cnt, cntT) = Counter(true.B, 2)
-  val result = Reg(UInt(8.W))
-
-  io.a.ready := RegInit(io.a.valid) & cnt === 0.U
-  result := io.a.bits + 1.U
-
-  io.b.valid := RegInit(io.b.ready) & cntT
-  io.b.bits := result
-}
-
-class ValidReady extends Module {
-  val io = IO(new Bundle {
-    val in = Flipped(Decoupled(UInt(8.W)))
-    val out = Decoupled(UInt(8.W))
-  })
-
-  val p = Module(new PipelineProducer)
-  val c = Module(new PipelineConsumer)
-
-  p.io.a <> io.in
-  p.io.b <> c.io.a
-  c.io.b <> io.out
-
+class MaskValueIO(val bits: Int, val numOfMask: Int, val length: Int) extends Bundle {
+  val mask = Vec(numOfMask, UInt(utils.maskType.W))
+  val value = Vec(length, UInt(bits.W))
 }
 
 object ControlSignalSel extends ChiselEnum {

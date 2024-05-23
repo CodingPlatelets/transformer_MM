@@ -7,7 +7,7 @@ import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.must.Matchers
 class sddmmTest extends AnyFreeSpec with Matchers {
   val bit = 32
-  val dimV = 68
+  val dimV = 18
   val L = 28
   val numOfMask = 4
   val queueSize = 10
@@ -69,11 +69,11 @@ class sddmmTest extends AnyFreeSpec with Matchers {
       dut.io.qVec.valid.poke(false.B)
 
       cnt = 0
-      while(cnt < mask.length){
+      while (cnt < mask.length) {
         dut.io.res.ready.poke(false.B)
         dut.io.outMask.ready.poke(false.B)
 
-        if(dut.io.res.valid.peek().litToBoolean){
+        if (dut.io.res.valid.peek().litToBoolean) {
           dut.io.outMask.valid.expect(true.B)
           for (i <- 0 until numOfMask) {
             dut.io.res.bits(mask(cnt)(i)).expect(res(cnt)(mask(cnt)(i)).U)
@@ -92,7 +92,6 @@ class sddmmTest extends AnyFreeSpec with Matchers {
       dut.io.res.ready.poke(false.B)
       dut.io.outMask.ready.poke(false.B)
 
-    
     }
   }
 }

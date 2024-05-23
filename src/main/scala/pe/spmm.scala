@@ -3,7 +3,6 @@ package pe
 import chisel3._
 import chisel3.util._
 import dataclass.data
-import os.read
 
 // using PE to do num dot vec
 class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32, val numOfMask: Int, val queueSize: Int = 10)
