@@ -2,94 +2,6 @@ package pe
 
 import chisel3._
 import chisel3.util._
-import dataclass.data
-
-// using PE to do num dot vec
-class NumDotVec(val bit: Int, val index: Int, val dimV: Int = 32, val numOfMask: Int, val queueSize: Int = 10)
-    extends Module {
-  val io = IO(new Bundle {
-    val num = Flipped(Decoupled(UInt(bit.W)))
-    val vec = Flipped(Decoupled((Vec(dimV, UInt(bit.W)))))
-    val res = Decoupled(Vec(dimV, UInt(bit.W)))
-    val ready = Output(Bool())
-  })
-
-  val pes = for (i <- 0 until dimV) yield Module(new PE(bit, (index, i), 0))
-  for (i <- 0 until dimV) {
-    pes(i).io := DontCare
-  }
-
-  // generate a result queue with 2 places to store the final result
-  val resQueue = Module(new Queue(Vec(dimV, UInt(bit.W)), queueSize, pipe = true, flow = true))
-  io.res <> resQueue.io.deq
-  resQueue.io.enq.valid := false.B
-  resQueue.io.enq.bits := DontCare
-
-  val state = RegInit(State.idle)
-  io.num.ready := state === State.send && resQueue.io.enq.ready
-  io.vec.ready := state === State.send && resQueue.io.enq.ready
-
-  io.ready := resQueue.io.enq.ready
-
-  object State extends ChiselEnum {
-    val idle, send = Value
-  }
-
-  val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
-
-  val dataValid = WireInit(io.num.valid && io.vec.valid)
-  val dataFire = WireInit(io.num.fire && io.vec.fire)
-
-  val produceData = WireInit(dataValid && resQueue.io.enq.ready)
-
-  val (cnt, cntT) = Counter(0 until numOfMask, state === State.send && produceData)
-
-  switch(state) {
-    is(State.idle) {
-      when(produceData) {
-        state := State.send
-      }
-    }
-    is(State.send) {
-      when(cnt === 0.U && !dataFire) {
-        state := State.idle
-      }
-
-      when(cntT) {
-        when(produceData) {
-          state := State.send
-        }.otherwise {
-          state := State.idle
-          io.num.ready := false.B
-          io.vec.ready := false.B
-        }
-
-        resQueue.io.enq.valid := true.B
-        for (i <- 0 until dimV) {
-          resQueue.io.enq.bits(i) := pes(i).io.outReg
-        }
-      }
-
-      when((!cntT) && dataFire) {
-        for (i <- 0 until dimV) {
-          pes(i).io.controlSign := ControlSignalSel.SPMM
-          pes(i).io.inTop := io.vec.bits(i)
-          pes(i).io.inLeft := io.num.bits
-          pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
-          tempRegVec(i) := pes(i).io.outReg
-        }
-      }
-
-      // printf("current cnt is %d\n", cnt)
-      // printf("current tempRegVec(0) is %d\n", tempRegVec(0))
-      // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
-      // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
-      // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
-      // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
-      // printf("\n")
-    }
-  }
-}
 
 // spmm using NumDotVec via stream data input
 // using mask to choose the needed nums
@@ -105,10 +17,8 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
     val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
   })
 
-  val numsQueue = Module(new Queue(Vec(L, UInt(bit.W)), queueSize, pipe = true, flow = true))
-  val inMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
-  val outMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = true))
-  val resQueue = Module(new Queue(Vec(dimV, UInt(bit.W)), queueSize, pipe = true, flow = true))
+  val numsQueue = Module(new Queue(Vec(L, UInt(bit.W)), queueSize, pipe = true, flow = false,useSyncReadMem = false ))
+  val inMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = false, useSyncReadMem = false))
 
   val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
   // val pes = VecInit(Seq.fill(dimV)(Module(new PE(bit, (0, 0), 0)).io))
@@ -119,66 +29,77 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
 
   numsQueue.io.deq := DontCare
   inMaskQueue.io.deq := DontCare
-  outMaskQueue.io.enq := DontCare
-  resQueue.io.enq := DontCare
+  io.res.bits := DontCare
+  io.outMask.bits := DontCare
 
   io.inMask <> inMaskQueue.io.enq
   io.nums <> numsQueue.io.enq
-  io.res <> resQueue.io.deq
-  io.outMask <> outMaskQueue.io.deq
 
   val maskReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
   val numsReg = RegInit(VecInit(Seq.fill(L)(0.U(bit.W))))
   val vMatrixReg = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W))))))
   vMatrixReg := io.vMatrix
 
-  val queueValid = WireInit(inMaskQueue.io.deq.valid && numsQueue.io.deq.valid)
-  val queueReady = WireInit(outMaskQueue.io.enq.ready && resQueue.io.enq.ready)
-  val isCalculated = RegInit(false.B)
+  val busy = RegInit(false.B)
+  inMaskQueue.io.deq.ready := !busy
+  numsQueue.io.deq.ready := !busy
 
-  when(queueValid && queueReady && !isCalculated) {
-    maskReg := inMaskQueue.io.deq.bits
-    numsReg := numsQueue.io.deq.bits
+  val resValid = RegInit(false.B)
+  io.res.valid := resValid
+  io.outMask.valid := resValid
+  val finishedButNoAccepted = RegInit(false.B)
 
-    numsQueue.io.deq.ready := true.B
-    inMaskQueue.io.deq.ready := true.B
-    isCalculated := true.B
-  }.otherwise {
-    inMaskQueue.io.deq.ready := false.B
-    numsQueue.io.deq.ready := false.B
-  }
+  val dataValid = WireInit(inMaskQueue.io.deq.valid && numsQueue.io.deq.valid)
 
-  val (cnt, warp) = Counter(0 until numOfMask, isCalculated)
+  val (cnt, warp) = Counter(0 until numOfMask, busy & (!resValid) & (!finishedButNoAccepted))
   // printf("current cnt is %d\n", cnt)
   // printf("current tempRegVec(0) is %d\n", tempRegVec(0))
   // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
   // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
   // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
   // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
-  // printf("current outQueue Count is %d\n", resQueue.io.count)
   // printf("current inQueue Count is %d\n", numsQueue.io.count)
   // printf("\n")
 
-  when(isCalculated && !warp) {
-    outMaskQueue.io.enq.valid := false.B
-    resQueue.io.enq.valid := false.B
-    for (i <- 0 until dimV) {
-      pes(i).io.controlSign := ControlSignalSel.SPMM
-      pes(i).io.inTop := io.vMatrix(maskReg(cnt))(i)
-      pes(i).io.inLeft := numsReg(maskReg(cnt))
-      pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
-      tempRegVec(i) := pes(i).io.outReg
+  when(busy) {
+    when(!warp && !finishedButNoAccepted) {
+      for (i <- 0 until dimV) {
+        pes(i).io.controlSign := ControlSignalSel.SPMM
+        pes(i).io.inTop := io.vMatrix(maskReg(cnt))(i)
+        pes(i).io.inLeft := numsReg(maskReg(cnt))
+        pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
+        tempRegVec(i) := pes(i).io.outReg
+      }
     }
-  }
 
-  when(warp) {
-    resQueue.io.enq.valid := true.B
-    for (i <- 0 until dimV) {
-      resQueue.io.enq.bits(i) := pes(i).io.outReg
+    when(warp) {
+      for (i <- 0 until dimV) {
+        tempRegVec(i) := pes(i).io.outReg
+      }
+      finishedButNoAccepted := true.B
     }
-    outMaskQueue.io.enq.bits := maskReg
-    outMaskQueue.io.enq.valid := true.B
-    isCalculated := false.B
+
+    when(finishedButNoAccepted) {
+      for (i <- 0 until dimV) {
+        io.res.bits(i) := tempRegVec(i)
+      }
+      io.outMask.bits := maskReg
+      resValid := true.B
+      when(resValid && io.res.ready && io.outMask.ready) {
+        resValid := false.B
+        finishedButNoAccepted := false.B
+        busy := false.B
+      }
+    }
+  }.otherwise {
+    resValid := false.B
+    when(dataValid) {
+      maskReg := inMaskQueue.io.deq.bits
+      numsReg := numsQueue.io.deq.bits
+      inMaskQueue.io.deq.ready := true.B
+      numsQueue.io.deq.ready := true.B
+      busy := true.B
+    }
   }
 
 }

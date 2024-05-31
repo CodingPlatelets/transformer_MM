@@ -1,7 +1,7 @@
 package pe
 
 import chisel3._
-import chisel3.util.experimental.loadMemoryFromFileInline
+import chisel3.util.experimental.loadMemoryFromFile
 
 class RWmem extends Module {
 
@@ -31,11 +31,32 @@ class RWmemFile(val bits: Int, val size: Int, memFile: String = "") extends Modu
   // val mem = SyncReadMem(bits, UInt(bits.W))
   // Initialize memory
   if (memFile.trim().nonEmpty) {
-    loadMemoryFromFileInline(mem, memFile)
+    loadMemoryFromFile(mem, memFile)
   }
   io.dataOut := DontCare
   when(io.enable) {
     val rdwrPort = mem(io.addr)
     when(io.write) { rdwrPort := io.dataIn }.otherwise { io.dataOut := rdwrPort }
   }
+}
+
+class ForwardingMemory(val bits: Int, val size: Int) extends Module {
+  val io = IO(new Bundle {
+    val rdAddr = Input(UInt(12.W))
+    val rdData = Output(Vec(size, UInt(bits.W)))
+    val wrEna = Input(Bool())
+    val wrData = Input(Vec(size, UInt(bits.W)))
+    val wrAddr = Input(UInt(12.W))
+  })
+  val mem = SyncReadMem(size * bits * 2, Vec(size, UInt(bits.W)))
+  val wrDataReg = RegNext(io.wrData)
+  val doForwardReg = RegNext(
+    io.wrAddr === io.rdAddr &&
+      io.wrEna
+  )
+  val memData = mem.read(io.rdAddr)
+  when(io.wrEna) {
+    mem.write(io.wrAddr, io.wrData)
+  }
+  io.rdData := Mux(doForwardReg, wrDataReg, memData)
 }

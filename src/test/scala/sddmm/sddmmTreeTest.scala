@@ -8,7 +8,6 @@ import scala.math._
 import chisel3.simulator.EphemeralSimulator._
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.must.Matchers
-import pe.VecDotVec
 
 class sddmmTest extends AnyFreeSpec with Matchers {
   val dim = 86
