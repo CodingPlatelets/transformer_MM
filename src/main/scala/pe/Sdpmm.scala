@@ -70,38 +70,39 @@ class SdpmmOrigin(
   sddmm.io.inMask <> io.inMask
   sddmm.io.qVec <> io.nums
 
+  val memMask = Module(
+    new ForwardingDelayMemory(Vec(numOfMask, UInt(utils.maskType.W)), numOfMask * utils.maskType, inPutTimes)
+  )
+
+  val memMiddle = Module(
+    new ForwardingDelayMemory(Vec(L, UInt(bit.W)), L * bit, inPutTimes)
+  )
+  sddmm.io.outMask <> memMask.io.wrData
+  sddmm.io.res <> memMiddle.io.wrData
+  SpMM.io.inMask <> memMask.io.rdData
+  SpMM.io.nums <> memMiddle.io.rdData
+
+  // val pipMask = Pipe(sddmm.io.outMask.valid, sddmm.io.outMask.bits, inPutTimes * (D + 3))
+  // val pipMiddle = Pipe(sddmm.io.res.valid, sddmm.io.res.bits, inPutTimes * (D + 3))
+
   // val memMask = Module(
-  //   new QueueModule(Vec(numOfMask, UInt(utils.maskType.W)), inPutTimes, useMem = true, pipe = false, flow = false)
+  //   new QueueModule(Vec(numOfMask, UInt(utils.maskType.W)), 1, useMem = true, pipe = false, flow = false)
   // )
   // val memMiddle = Module(
-  //   new QueueModule(Vec(L, UInt(bit.W)), inPutTimes, useMem = true, pipe = false, flow = false)
+  //   new QueueModule(Vec(L, UInt(bit.W)), 1, useMem = true, pipe = false, flow = false)
   // )
-  // memMask.in <> sddmm.io.outMask
-  // memMiddle.in <> sddmm.io.res
+
+  // sddmm.io.outMask.ready := memMask.in.ready
+  // sddmm.io.res.ready := memMiddle.in.ready
+
+  // memMask.in.valid := pipMask.valid
+  // memMask.in.bits := pipMask.bits
+
+  // memMiddle.in.valid := pipMiddle.valid
+  // memMiddle.in.bits := pipMiddle.bits
+
   // memMiddle.out <> SpMM.io.nums
   // memMask.out <> SpMM.io.inMask
-
-  val pipMask = Pipe(sddmm.io.outMask.valid, sddmm.io.outMask.bits, inPutTimes)
-  val pipMiddle = Pipe(sddmm.io.res.valid, sddmm.io.res.bits, inPutTimes)
-
-  val memMask = Module(
-    new QueueModule(Vec(numOfMask, UInt(utils.maskType.W)), 1, useMem = true, pipe = false, flow = false)
-  )
-  val memMiddle = Module(
-    new QueueModule(Vec(L, UInt(bit.W)), 1, useMem = true, pipe = false, flow = false)
-  )
-
-  sddmm.io.outMask.ready := memMask.in.ready
-  sddmm.io.res.ready := memMiddle.in.ready
-
-  memMask.in.valid := pipMask.valid
-  memMask.in.bits := pipMask.bits
-
-  memMiddle.in.valid := pipMiddle.valid
-  memMiddle.in.bits := pipMiddle.bits
-
-  memMiddle.out <> SpMM.io.nums
-  memMask.out <> SpMM.io.inMask
 
   // pipMask.io.enq := sddmm.io.outMask
   // pipMiddle.io.enq := sddmm.io.res

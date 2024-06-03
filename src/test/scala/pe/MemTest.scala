@@ -16,42 +16,44 @@ class MemTest extends AnyFlatSpec with ChiselScalatestTester {
   val fileName = "src/main/resources/memtest.txt"
   val annos = Seq(VerilatorBackendAnnotation)
 
-  behavior.of("Mem")
-  it should ("Forward Mem test") in {
-    test(new ForwardingMemory(bit, dimV)).withAnnotations(annos) { dut =>
-      val testQ = Seq.tabulate(dimV)(i => 2)
-      val testQ2 = Seq.tabulate(dimV)(i => 3)
-      dut.io.wrAddr.poke(1.U)
-      dut.io.wrEna.poke(true.B)
-      for (i <- 0 until dimV) {
-        dut.io.wrData(i).poke(testQ(i).U)
-      }
+  val delay = 3
+  behavior.of("delay Mem")
+  it should ("Sequence delay n cycles") in {
+    test(new ForwardingDelayMemory(UInt(16.W), 16, delay)).withAnnotations(annos) { dut =>
+      dut.io.wrData.initSource()
+      dut.io.rdData.initSink()
 
-      dut.clock.step()
-
-      dut.io.wrAddr.poke(2.U)
-      dut.io.wrEna.poke(true.B)
-      for (i <- 0 until dimV) {
-        dut.io.wrData(i).poke(testQ2(i).U)
-      }
-
-      dut.clock.step()
-      parallel(dut.io.rdAddr.poke(1.U), dut.io.wrEna.poke(false.B))
-
-      dut.clock.step()
-      for (i <- 0 until dimV) {
-        dut.io.rdData(i).expect(testQ(i).U)
-      }
-
-      dut.io.rdAddr.poke(2.U)
-
-      dut.clock.step()
-      for (i <- 0 until dimV) {
-        dut.io.rdData(i).expect(testQ2(i).U)
-      }
-      println("yes")
-
+      fork {
+        dut.io.wrData.enqueueSeq(Seq.tabulate(delay)(i => i.U))
+      }.fork {
+        dut.io.rdData.expectDequeueSeq(Seq.tabulate(delay)(i => i.U))
+      }.join()
     }
   }
 
+  it should ("delay n cycles") in {
+    test(new ForwardingDelayMemory(UInt(16.W), 16, delay)).withAnnotations(annos) { dut =>
+      dut.io.wrData.initSource()
+      dut.io.rdData.initSink()
+
+      dut.io.wrData.enqueueNow(1.U)
+      dut.io.rdData.expectInvalid()
+      dut.clock.step(5)
+      dut.io.wrData.enqueueNow(2.U)
+
+      dut.io.rdData.expectInvalid()
+      dut.clock.step(5)
+
+      dut.io.wrData.enqueueNow(3.U)
+      dut.io.rdData.expectInvalid()
+      dut.clock.step(4)
+
+      dut.io.rdData.expectDequeueNow(1.U)
+      dut.clock.step(3)
+      dut.io.rdData.expectDequeueNow(2.U)
+
+      dut.clock.step(3)
+      dut.io.rdData.expectDequeueNow(3.U)
+    }
+  }
 }

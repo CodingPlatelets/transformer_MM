@@ -7,13 +7,15 @@ import chisel3.stage.PrintFullStackTraceAnnotation
 
 class SdpmmOriginTest extends AnyFlatSpec with ChiselScalatestTester {
   val bit = 64
-  val dimV = 32
-  val L = 64
-  val numOfMask = 32
+  val dimV = 16
+  // val L = 512
+  val L = 128
+  // val numOfMask = 8
+  val numOfMask = 16
   val queueSize = 20
   val inPutTimes = L / 2
-  // val annos = Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)
-  val annos = Seq(VerilatorBackendAnnotation)
+  val annos = Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)
+  // val annos = Seq(VerilatorBackendAnnotation)
 
   behavior.of("tester on sdpmm origin")
   it should "sdpmmOrigin should calculate in lines" in {
