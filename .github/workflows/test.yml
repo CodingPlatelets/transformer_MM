@@ -52,4 +52,4 @@ jobs:
           echo VERILATOR_ROOT="$(pwd)/${{ env.verilator-install-dir }}/share/verilator" >> $GITHUB_ENV
           ln -sf $(pwd)/${{ env.verilator-install-dir }}/bin/verilator_bin $(pwd)/${{ env.verilator-install-dir }}/share/verilator/verilator_bin
       - name: SBT Test
-        run: sbt test
+        run: sbt test -mem 5000
