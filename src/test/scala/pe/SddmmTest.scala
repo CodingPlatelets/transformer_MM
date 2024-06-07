@@ -45,7 +45,7 @@ class SddmmTest extends AnyFlatSpec with ChiselScalatestTester {
 
       for (j <- 0 until L) {
         for (i <- 0 until dimV) {
-          dut.io.kMatrix(j)(i).poke(testK(j)(i).U)
+          dut.kMatrix(j)(i).poke(testK(j)(i).U)
         }
       }
       dut.clock.step()
@@ -53,50 +53,39 @@ class SddmmTest extends AnyFlatSpec with ChiselScalatestTester {
       fork {
         var cnt = 0
         while (cnt < mask.length) {
-          if (dut.io.inMask.ready.peekBoolean() && dut.io.qVec.ready.peekBoolean()) {
+          if (dut.InputPipe.ready.peekBoolean() && dut.InputPipe.ready.peekBoolean()) {
             for (i <- 0 until numOfMask) {
-              dut.io.inMask.bits(i).poke(mask(cnt)(i).U)
+              dut.InputPipe.bits.mask(i).poke(mask(cnt)(i).U)
             }
             for (i <- 0 until dimV) {
-              dut.io.qVec.bits(i).poke(testQ(i).U)
+              dut.InputPipe.bits.value(i).poke(testQ(i).U)
             }
-            parallel(
-              dut.io.inMask.valid.poke(true.B),
-              dut.io.qVec.valid.poke(true.B)
-            )
+            dut.InputPipe.valid.poke(true.B)
             cnt += 1
           }
           dut.clock.step()
         }
-        dut.io.inMask.valid.poke(false.B)
-        dut.io.qVec.valid.poke(false.B)
+        dut.InputPipe.valid.poke(false.B)
       }.fork {
         var cntR = 0
         while (cntR < mask.length) {
 
-          if (dut.io.res.valid.peekBoolean()) {
-            dut.io.outMask.valid.expect(true.B)
+          if (dut.OutputPipe.valid.peekBoolean()) {
             for (i <- 0 until numOfMask) {
-              dut.io.res.bits(mask(cntR)(i)).expect(res(cntR)(mask(cntR)(i)).U)
-              dut.io.outMask.bits(i).expect(mask(cntR)(i).U)
+              dut.OutputPipe.bits.value(mask(cntR)(i)).expect(res(cntR)(mask(cntR)(i)).U)
+              dut.OutputPipe.bits.mask(i).expect(mask(cntR)(i).U)
             }
-            parallel(
-              dut.io.outMask.ready.poke(true.B),
-              dut.io.res.ready.poke(true.B)
-            )
+            dut.OutputPipe.ready.poke(true.B)
 
             cntR += 1
           } else {
-            parallel(
-              dut.io.res.ready.poke(false.B),
-              dut.io.outMask.ready.poke(false.B)
-            )
+            dut.OutputPipe.ready.poke(false.B)
           }
 
           dut.clock.step()
         }
-        dut.io.res.ready.poke(false.B)
-        dut.io.outMask.ready.poke(false.B)
+
+        dut.OutputPipe.ready.poke(false.B)
       }.join()
 
     }

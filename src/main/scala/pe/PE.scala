@@ -31,9 +31,9 @@ object utils {
   val maskType = 16
 }
 
-class MaskValueIO(val bits: Int, val numOfMask: Int, val length: Int) extends Bundle {
+class PipeValue[T <: Data](elements: T, val dim: Int, val numOfMask: Int) extends Bundle {
+  val value = Vec(dim, elements)
   val mask = Vec(numOfMask, UInt(utils.maskType.W))
-  val value = Vec(length, UInt(bits.W))
 }
 
 object ControlSignalSel extends ChiselEnum {

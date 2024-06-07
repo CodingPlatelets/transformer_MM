@@ -9,8 +9,8 @@ class SpmmTest extends AnyFlatSpec with ChiselScalatestTester {
   val L = 28
   val numOfMask = 3
   val queueSize = 10
-  behavior.of("tester on sddmm")
-  it should "sddmm should calculate in lines" in {
+  behavior.of("tester on spmm")
+  it should "spmm should calculate in lines" in {
     test(new SpMM(bit, dimV, L, 1, numOfMask, queueSize)) { dut =>
       var mask1 = Seq(1, 2, 3)
       var mask2 = Seq(1, 4, 6)
@@ -45,7 +45,7 @@ class SpmmTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step()
       for (i <- 0 until L) {
         for (m <- 0 until dimV) {
-          dut.io.vMatrix(i)(m).poke(testV(i)(m).U)
+          dut.vMatrix(i)(m).poke(testV(i)(m).U)
         }
       }
       dut.clock.step()
@@ -53,47 +53,36 @@ class SpmmTest extends AnyFlatSpec with ChiselScalatestTester {
       fork {
         var cnt = 0
         while (cnt < numOfMask) {
-          if (dut.io.inMask.ready.peekBoolean() && dut.io.nums.ready.peekBoolean()) {
+          if (dut.InputPipe.ready.peekBoolean()) {
             for (i <- 0 until L) {
-              dut.io.nums.bits(i).poke(testNum(i).U)
+              dut.InputPipe.bits.value(i).poke(testNum(i).U)
             }
             for (i <- 0 until numOfMask) {
-              dut.io.inMask.bits(i).poke(mask(cnt)(i).U)
+              dut.InputPipe.bits.mask(i).poke(mask(cnt)(i).U)
             }
-
-            parallel(
-              dut.io.inMask.valid.poke(true.B),
-              dut.io.nums.valid.poke(true.B)
-            )
+            dut.InputPipe.valid.poke(true.B)
             cnt = cnt + 1
           }
           dut.clock.step()
         }
-        dut.io.inMask.valid.poke(false.B)
-        dut.io.nums.valid.poke(false.B)
-
+        dut.InputPipe.valid.poke(false.B)
       }.fork {
         var cnt = 0
         while (cnt < numOfMask) {
-          dut.io.res.ready.poke(false.B)
-          if (dut.io.res.valid.peekBoolean()) {
+          dut.OutputPipe.ready.poke(false.B)
+          if (dut.OutputPipe.valid.peekBoolean()) {
             for (i <- 0 until dimV) {
-              dut.io.res.bits(i).expect(res(cnt)(i).U)
+              dut.OutputPipe.bits.value(i).expect(res(cnt)(i).U)
             }
-            dut.io.outMask.valid.expect(true.B)
             for (i <- 0 until numOfMask) {
-              dut.io.outMask.bits(i).expect(mask(cnt)(i).U)
+              dut.OutputPipe.bits.mask(i).expect(mask(cnt)(i).U)
             }
-            parallel(
-              dut.io.res.ready.poke(true.B),
-              dut.io.outMask.ready.poke(true.B)
-            )
+            dut.OutputPipe.ready.poke(true.B)
             cnt = cnt + 1
           }
           dut.clock.step()
         }
-        dut.io.res.ready.poke(false.B)
-        dut.io.outMask.ready.poke(false.B)
+        dut.OutputPipe.ready.poke(false.B)
       }.join()
 
     }
