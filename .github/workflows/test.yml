@@ -23,7 +23,7 @@ jobs:
       - name: Setup Scala
         uses: coursier/setup-action@v1
         with:
-          jvm: adopt:11
+          jvm: adopt:17
           apps: sbt 
       - name: Setup Dependencies
         run: |
