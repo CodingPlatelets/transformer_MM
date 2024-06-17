@@ -10,7 +10,7 @@ object TOP extends App {
     // new NumDotVec(4, 1, 4),
     // new SpMM(8, 8, 7, 3, 10),
     // new SdpmmOrigin(16, 8, 64, 8, 10, "",64),
-    new Sdpmm(16, 8, 64, 8, 10),
+    new Sdpmm(16, 16, 128, 16, 10),
     // new ForwardingMemory(32, 1024),
     // new Sddmm(8, 16, 32, 16, 10),
     // new RWmemFile(32, 1024, "/home/hwk/data/code/transformer_MM/src/main/resources/memtest.txt"),
