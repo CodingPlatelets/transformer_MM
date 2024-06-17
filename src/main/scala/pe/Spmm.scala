@@ -9,16 +9,17 @@ import chisel3.util._
 // a row of a L x L matrix with mask select the needed nums will dot the specific row of the V matrix selected by the same mask
 class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numOfMask: Int, val queueSize: Int = 10)
     extends Module {
-  val io = IO(new Bundle {
-    val inMask = Flipped(Decoupled(Vec(numOfMask, UInt(utils.maskType.W))))
-    val nums = Flipped(Decoupled(Vec(L, UInt(bit.W))))
-    val vMatrix = Input(Vec(L, Vec(dimV, UInt(bit.W))))
-    val res = Decoupled(Vec(dimV, UInt(bit.W)))
-    val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
-  })
 
-  val numsQueue = Module(new Queue(Vec(L, UInt(bit.W)), queueSize, pipe = true, flow = false,useSyncReadMem = false ))
-  val inMaskQueue = Module(new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = false, useSyncReadMem = false))
+  val vMatrix = IO(Input(Vec(L, Vec(dimV, UInt(bit.W)))))
+
+  val InputPipe = IO(Flipped(Decoupled(new PipeValue(UInt(bit.W), L, numOfMask))))
+  val OutputPipe = IO(Decoupled(new PipeValue(UInt(bit.W), dimV, numOfMask)))
+
+  val InputQueue = Module(
+    new Queue(new PipeValue(UInt(bit.W), L, numOfMask), queueSize, pipe = true, flow = false, useSyncReadMem = false)
+  )
+
+  InputQueue.io.enq <> InputPipe
 
   val tempRegVec = RegInit(VecInit(Seq.fill(dimV)(0.U(bit.W))))
   // val pes = VecInit(Seq.fill(dimV)(Module(new PE(bit, (0, 0), 0)).io))
@@ -27,29 +28,24 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
     pes(i).io := DontCare
   }
 
-  numsQueue.io.deq := DontCare
-  inMaskQueue.io.deq := DontCare
-  io.res.bits := DontCare
-  io.outMask.bits := DontCare
-
-  io.inMask <> inMaskQueue.io.enq
-  io.nums <> numsQueue.io.enq
+  InputQueue.io.deq := DontCare
+  InputQueue.io.deq := DontCare
+  OutputPipe.bits := DontCare
+  OutputPipe.bits := DontCare
 
   val maskReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
   val numsReg = RegInit(VecInit(Seq.fill(L)(0.U(bit.W))))
   val vMatrixReg = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W))))))
-  vMatrixReg := io.vMatrix
+  vMatrixReg := vMatrix
 
   val busy = RegInit(false.B)
-  inMaskQueue.io.deq.ready := !busy
-  numsQueue.io.deq.ready := !busy
+  InputQueue.io.deq.ready := !busy
 
   val resValid = RegInit(false.B)
-  io.res.valid := resValid
-  io.outMask.valid := resValid
+  OutputPipe.valid := resValid
   val finishedButNoAccepted = RegInit(false.B)
 
-  val dataValid = WireInit(inMaskQueue.io.deq.valid && numsQueue.io.deq.valid)
+  val dataValid = WireInit(InputQueue.io.deq.valid)
 
   val (cnt, warp) = Counter(0 until numOfMask, busy & (!resValid) & (!finishedButNoAccepted))
   // printf("current cnt is %d\n", cnt)
@@ -65,7 +61,7 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
     when(!warp && !finishedButNoAccepted) {
       for (i <- 0 until dimV) {
         pes(i).io.controlSign := ControlSignalSel.SPMM
-        pes(i).io.inTop := io.vMatrix(maskReg(cnt))(i)
+        pes(i).io.inTop := vMatrixReg(maskReg(cnt))(i)
         pes(i).io.inLeft := numsReg(maskReg(cnt))
         pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
         tempRegVec(i) := pes(i).io.outReg
@@ -81,11 +77,11 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
 
     when(finishedButNoAccepted) {
       for (i <- 0 until dimV) {
-        io.res.bits(i) := tempRegVec(i)
+        OutputPipe.bits.value(i) := tempRegVec(i)
       }
-      io.outMask.bits := maskReg
+      OutputPipe.bits.mask := maskReg
       resValid := true.B
-      when(resValid && io.res.ready && io.outMask.ready) {
+      when(resValid && OutputPipe.ready) {
         resValid := false.B
         finishedButNoAccepted := false.B
         busy := false.B
@@ -94,10 +90,9 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
   }.otherwise {
     resValid := false.B
     when(dataValid) {
-      maskReg := inMaskQueue.io.deq.bits
-      numsReg := numsQueue.io.deq.bits
-      inMaskQueue.io.deq.ready := true.B
-      numsQueue.io.deq.ready := true.B
+      maskReg := InputQueue.io.deq.bits.mask
+      numsReg := InputQueue.io.deq.bits.value
+      InputQueue.io.deq.ready := true.B
       busy := true.B
     }
   }

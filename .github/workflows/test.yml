@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  verilator-version: v5.022
+  verilator-version: v4.202
   verilator-install-dir: verilator-install
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
       - name: Setup Scala
         uses: coursier/setup-action@v1
         with:
-          jvm: adopt:11
+          jvm: java-oracle:17
           apps: sbt 
       - name: Setup Dependencies
         run: |
@@ -52,4 +52,4 @@ jobs:
           echo VERILATOR_ROOT="$(pwd)/${{ env.verilator-install-dir }}/share/verilator" >> $GITHUB_ENV
           ln -sf $(pwd)/${{ env.verilator-install-dir }}/bin/verilator_bin $(pwd)/${{ env.verilator-install-dir }}/share/verilator/verilator_bin
       - name: SBT Test
-        run: sbt test
+        run: sbt test -mem 5000

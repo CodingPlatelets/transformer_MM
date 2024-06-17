@@ -7,13 +7,15 @@ import chisel3.stage.PrintFullStackTraceAnnotation
 
 class SdpmmOriginTest extends AnyFlatSpec with ChiselScalatestTester {
   val bit = 64
-  val dimV = 32
-  val L = 64
-  val numOfMask = 32
+  val dimV = 16
+  // val L = 512
+  val L = 128
+  // val numOfMask = 8
+  val numOfMask = 16
   val queueSize = 20
   val inPutTimes = L / 2
-  // val annos = Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)
-  val annos = Seq(VerilatorBackendAnnotation)
+  val annos = Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)
+  // val annos = Seq(VerilatorBackendAnnotation)
 
   behavior.of("tester on sdpmm origin")
   it should "sdpmmOrigin should calculate in lines" in {
@@ -92,57 +94,51 @@ class SdpmmOriginTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step()
 
       allClock = allClock + 1
+
       fork {
-      var cnt = 0
-      while (cnt < inPutTimes) {
-        if (dut.io.inMask.ready.peekBoolean() && dut.io.nums.ready.peekBoolean()) {
-          for (i <- 0 until numOfMask) {
-            dut.io.inMask.bits(i).poke(mask(cnt)(i).U)
-          }
+        var cnt = 0
+        while (cnt < inPutTimes) {
+          if (dut.InputPipe.ready.peekBoolean()) {
+            for (i <- 0 until numOfMask) {
+              dut.InputPipe.bits.mask(i).poke(mask(cnt)(i).U)
+            }
 
-          for (i <- 0 until dimV) {
-            dut.io.nums.bits(i).poke(testQ(i).U)
-          }
+            for (i <- 0 until dimV) {
+              dut.InputPipe.bits.value(i).poke(testQ(i).U)
+            }
 
-          parallel(dut.io.inMask.valid.poke(true.B), dut.io.nums.valid.poke(true.B))
-          cnt = cnt + 1
-        } else {
-          dut.io.inMask.valid.poke(false.B)
-          dut.io.nums.valid.poke(false.B)
+            dut.InputPipe.valid.poke(true.B)
+            cnt = cnt + 1
+          } else {
+            dut.InputPipe.valid.poke(false.B)
+          }
+          dut.clock.step()
+          allClock = allClock + 1
         }
-        dut.clock.step()
 
-        allClock = allClock + 1
-      }
+        dut.InputPipe.valid.poke(false.B)
 
-      dut.io.inMask.valid.poke(false.B)
-      dut.io.nums.valid.poke(false.B)
-
-      // dut.clock.step()
       }.fork {
-      var cntR = 0
-      while (cntR < inPutTimes) {
-        if (dut.io.res.valid.peekBoolean() && dut.io.outMask.valid.peekBoolean()) {
-          for (i <- 0 until dimV) {
-            dut.io.res.bits(i).expect(res(cntR)(i).U)
-          }
+        var cntR = 0
+        while (cntR < inPutTimes) {
+          if (dut.OutputPipe.valid.peekBoolean()) {
+            for (i <- 0 until dimV) {
+              dut.OutputPipe.bits.value(i).expect(res(cntR)(i).U)
+            }
 
-          for (i <- 0 until numOfMask) {
-            dut.io.outMask.bits(i).expect(mask(cntR)(i).U)
+            for (i <- 0 until numOfMask) {
+              dut.OutputPipe.bits.mask(i).expect(mask(cntR)(i).U)
+            }
+            dut.OutputPipe.ready.poke(true.B)
+            cntR = cntR + 1
+          } else {
+            dut.OutputPipe.ready.poke(false.B)
           }
-          parallel(dut.io.outMask.ready.poke(true.B), dut.io.res.ready.poke(true.B))
-          cntR = cntR + 1
-        } else {
-          dut.io.res.ready.poke(false.B)
-          dut.io.outMask.ready.poke(false.B)
+          dut.clock.step()
+          allClock = allClock + 1
         }
-        dut.clock.step()
 
-        allClock = allClock + 1
-      }
-
-      dut.io.res.ready.poke(false.B)
-      dut.io.outMask.ready.poke(false.B)
+        dut.OutputPipe.ready.poke(false.B)
       }.join()
 
       println("Origin all clock is: " + allClock)

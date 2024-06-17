@@ -7,31 +7,25 @@ class Sdpmm(val bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int 
     extends Module {
 
   val io = IO(new Bundle {
-    val inMask = Flipped(Decoupled(Vec(numOfMask, UInt(utils.maskType.W))))
-    val nums = Flipped(Decoupled(Vec(D, UInt(bit.W))))
-    val res = Decoupled(Vec(D, UInt(bit.W)))
-    val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
-
     val kMatrix = Input(Vec(L, Vec(D, UInt(bit.W))))
     val vMatrix = Input(Vec(L, Vec(D, UInt(bit.W))))
   })
 
+  val InputPipe = IO(Flipped(Decoupled(new PipeValue(UInt(bit.W), D, numOfMask))))
+  val OutputPipe = IO(Decoupled(new PipeValue(UInt(bit.W), D, numOfMask)))
+
   val sddmm = Module(new Sddmm(bit, D, L, numOfMask, queueSize))
   val SpMM = Module(new SpMM(bit, D, L, 1, numOfMask, queueSize))
 
-  sddmm.io.kMatrix := io.kMatrix
-  SpMM.io.vMatrix := io.vMatrix
+  sddmm.kMatrix := io.kMatrix
+  SpMM.vMatrix := io.vMatrix
 
-  sddmm.io.inMask <> io.inMask
-  sddmm.io.qVec <> io.nums
+  sddmm.InputPipe <> InputPipe
 
   // todo: softmax can be added here
-  SpMM.io.inMask <> sddmm.io.outMask
-  SpMM.io.nums <> sddmm.io.res
+  SpMM.InputPipe <> sddmm.OutputPipe
 
-  io.res <> SpMM.io.res
-  io.outMask <> SpMM.io.outMask
-
+  OutputPipe <> SpMM.OutputPipe
 }
 
 class SdpmmOrigin(
@@ -45,62 +39,30 @@ class SdpmmOrigin(
     extends Module {
 
   val io = IO(new Bundle {
-    val inMask = Flipped(Decoupled(Vec(numOfMask, UInt(utils.maskType.W))))
-    val nums = Flipped(Decoupled(Vec(D, UInt(bit.W))))
-    val res = Decoupled(Vec(D, UInt(bit.W)))
-    val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
-
     val kMatrix = Input(Vec(L, Vec(D, UInt(bit.W))))
     val vMatrix = Input(Vec(L, Vec(D, UInt(bit.W))))
   })
 
+  val InputPipe = IO(Flipped(Decoupled(new PipeValue(UInt(bit.W), D, numOfMask))))
+  val OutputPipe = IO(Decoupled(new PipeValue(UInt(bit.W), D, numOfMask)))
+
   val sddmm = Module(new Sddmm(bit, D, L, numOfMask, queueSize))
   val SpMM = Module(new SpMM(bit, D, L, 1, numOfMask, queueSize))
-  sddmm.io.res.ready := DontCare
-  sddmm.io.outMask.ready := DontCare
-  SpMM.io.inMask := DontCare
-  SpMM.io.nums := DontCare
 
-  sddmm.io.kMatrix := io.kMatrix
-  SpMM.io.vMatrix := io.vMatrix
+  sddmm.kMatrix := io.kMatrix
+  SpMM.vMatrix := io.vMatrix
 
-  sddmm.io.inMask <> io.inMask
-  sddmm.io.qVec <> io.nums
+  sddmm.InputPipe <> InputPipe
 
-  // val memMask = Module(
-  //   new QueueModule(Vec(numOfMask, UInt(utils.maskType.W)), inPutTimes, useMem = true, pipe = false, flow = false)
-  // )
-  // val memMiddle = Module(
-  //   new QueueModule(Vec(L, UInt(bit.W)), inPutTimes, useMem = true, pipe = false, flow = false)
-  // )
-  // memMask.in <> sddmm.io.outMask
-  // memMiddle.in <> sddmm.io.res
-  // memMiddle.out <> SpMM.io.nums
-  // memMask.out <> SpMM.io.inMask
-
-  val pipMask = Pipe(sddmm.io.outMask.valid, sddmm.io.outMask.bits, inPutTimes)
-  val pipMiddle = Pipe(sddmm.io.res.valid, sddmm.io.res.bits, inPutTimes)
-
-  val memMask = Module(
-    new QueueModule(Vec(numOfMask, UInt(utils.maskType.W)), 1, useMem = true, pipe = false, flow = false)
-  )
   val memMiddle = Module(
-    new QueueModule(Vec(L, UInt(bit.W)), 1, useMem = true, pipe = false, flow = false)
+    new ForwardingDelayMemory(
+      new PipeValue(UInt(bit.W), L, numOfMask),
+      L * bit + numOfMask * utils.maskType,
+      inPutTimes
+    )
   )
+  sddmm.OutputPipe <> memMiddle.io.wrData
+  SpMM.InputPipe <> memMiddle.io.rdData
 
-  sddmm.io.outMask.ready := memMask.in.ready
-  sddmm.io.res.ready := memMiddle.in.ready
-
-  memMask.in.valid := pipMask.valid
-  memMask.in.bits := pipMask.bits
-
-  memMiddle.in.valid := pipMiddle.valid
-  memMiddle.in.bits := pipMiddle.bits
-
-  memMiddle.out <> SpMM.io.nums
-  memMask.out <> SpMM.io.inMask
-
-  io.res <> SpMM.io.res
-  io.outMask <> SpMM.io.outMask
-
+  OutputPipe <> SpMM.OutputPipe
 }

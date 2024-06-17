@@ -17,29 +17,21 @@ class VecDotVecTree(val dim: Int) extends Module {
 
 }
 
-
 // todo: cannot create pes dynamically, so we must fix the numOfMask, but we can set a min numOfMask and schedule it in the future
 class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4, val queueSize: Int = 2)
     extends Module {
-  val io = IO(new Bundle {
-    val inMask = Flipped(Decoupled(Vec(numOfMask, UInt(utils.maskType.W))))
-    val qVec = Flipped(Decoupled(Vec(D, UInt(bit.W))))
-    // L x D matrix for row dot row
-    val kMatrix = Input(Vec(L, Vec(D, UInt(bit.W))))
-    val res = Decoupled(Vec(L, UInt(bit.W)))
-    val outMask = Decoupled(Vec(numOfMask, UInt(utils.maskType.W)))
-  })
 
-  val qVecQueue = Module(new Queue(Vec(D, UInt(bit.W)), queueSize, pipe = true, flow = false, useSyncReadMem = false))
-  val inMaskQueue = Module(
-    new Queue(Vec(numOfMask, UInt(utils.maskType.W)), queueSize, pipe = true, flow = false, useSyncReadMem = false)
+  // L x D matrix for row dot row
+  val kMatrix = IO(Input(Vec(L, Vec(D, UInt(bit.W)))))
+
+  val InputPipe = IO(Flipped(Decoupled(new PipeValue(UInt(bit.W), D, numOfMask))))
+  val OutputPipe = IO(Decoupled(new PipeValue(UInt(bit.W), L, numOfMask)))
+
+  val InputQueue = Module(
+    new Queue(new PipeValue(UInt(bit.W), D, numOfMask), queueSize, pipe = true, flow = false, useSyncReadMem = false)
   )
 
-  io.inMask <> inMaskQueue.io.enq
-  io.qVec <> qVecQueue.io.enq
-
-  inMaskQueue.io.deq.bits := DontCare
-  qVecQueue.io.deq.bits := DontCare
+  InputQueue.io.enq <> InputPipe
 
   val pes = for (i <- 0 until numOfMask) yield Module(new PE(bit, (i, 0), 0))
   for (i <- 0 until numOfMask) {
@@ -47,22 +39,20 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
   }
   val tempReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(bit.W))))
   val tempK = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(D)(0.U(bit.W))))))
-  tempK := io.kMatrix
+  tempK := kMatrix
 
-  val dataValid = WireInit(inMaskQueue.io.deq.valid && qVecQueue.io.deq.valid)
+//  val dataValid = WireInit(inMaskQueue.io.deq.valid && qVecQueue.io.deq.valid)
+  val dataValid = WireInit(InputQueue.io.deq.valid)
 
   val tempQ = RegInit(VecInit(Seq.fill(D)(0.U(bit.W))))
   val tempMask = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
 
   val busy = RegInit(false.B)
-  inMaskQueue.io.deq.ready := !busy
-  qVecQueue.io.deq.ready := !busy
+  InputQueue.io.deq.ready := !busy
 
   val resValid = RegInit(false.B)
-  io.res.valid := resValid
-  io.outMask.valid := resValid
-  io.res.bits := DontCare
-  io.outMask.bits := DontCare
+  OutputPipe.valid := resValid
+  OutputPipe.bits := DontCare
   val finishedButNoAccepted = RegInit(false.B)
 
   val (cnt, warp) = Counter(0 until D, busy & (!resValid) & !(finishedButNoAccepted))
@@ -89,11 +79,11 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
 
     when(finishedButNoAccepted) {
       for (i <- 0 until numOfMask) {
-        io.res.bits(tempMask(i)) := tempReg(i)
+        OutputPipe.bits.value(tempMask(i)) := tempReg(i)
       }
-      io.outMask.bits := tempMask
+      OutputPipe.bits.mask := tempMask
       resValid := true.B
-      when(resValid && io.res.ready && io.outMask.ready) {
+      when(resValid && OutputPipe.ready) {
         resValid := false.B
         finishedButNoAccepted := false.B
         busy := false.B
@@ -103,10 +93,9 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
   }.otherwise {
     resValid := false.B
     when(dataValid) {
-      tempQ := qVecQueue.io.deq.bits
-      tempMask := inMaskQueue.io.deq.bits
-      qVecQueue.io.deq.ready := true.B
-      inMaskQueue.io.deq.ready := true.B
+      tempQ := InputQueue.io.deq.bits.value
+      tempMask := InputQueue.io.deq.bits.mask
+      InputQueue.io.deq.ready := true.B
       busy := true.B
     }
   }
