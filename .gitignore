@@ -2,7 +2,13 @@
 test_run_dir/*
 ### XilinxISE template
 # intermediate build files
+hw/*
+project/*
+*.info
+*.xclbin
+*.xml
 *.sv
+*.wcfg
 *.v
 *.bgn
 *.bit

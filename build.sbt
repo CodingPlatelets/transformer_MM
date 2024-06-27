@@ -14,7 +14,7 @@ lazy val root = (project in file("."))
       "org.scalatest" %% "scalatest" % "3.2.16" % "test",
       "edu.berkeley.cs" %% "chiseltest" % "6.0.0"
     ),
-    resolvers += "aliyun".at("https://maven.aliyun.com/nexus/content/groups/public/"),
+    resolvers += "aliyun".at("https://maven.aliyun.com/repository/public"),
     scalacOptions ++= Seq(
       "-language:reflectiveCalls",
       "-deprecation",
@@ -26,7 +26,7 @@ lazy val root = (project in file("."))
   )
 
 pomExtra := (
-<url>http://chisel.eecs.berkeley.edu/</url>
+  <url>http://chisel.eecs.berkeley.edu/</url>
 <licenses>
   <license>
     <name>BSD-style</name>

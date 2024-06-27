@@ -2,6 +2,7 @@ package pe
 
 import chisel3._
 import chisel3.util._
+import pe.utils._
 
 class VecDotVecTree(val dim: Int) extends Module {
 
@@ -45,7 +46,7 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
   val dataValid = WireInit(InputQueue.io.deq.valid)
 
   val tempQ = RegInit(VecInit(Seq.fill(D)(0.U(bit.W))))
-  val tempMask = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
+  val tempMask = RegInit(VecInit(Seq.fill(numOfMask)(0.U(common.maskType.W))))
 
   val busy = RegInit(false.B)
   InputQueue.io.deq.ready := !busy

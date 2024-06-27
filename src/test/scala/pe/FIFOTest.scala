@@ -3,6 +3,7 @@ package pe
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
+import pe.utils.QueueModule
 
 class FIFOTest extends AnyFlatSpec with ChiselScalatestTester {
 

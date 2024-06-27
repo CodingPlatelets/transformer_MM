@@ -3,30 +3,15 @@ package vitiskernel
 import chisel3._
 import chisel3.util._
 import _root_.circt.stage.ChiselStage
-import vitiskernel.interface.{VitisAXIReadMaster, VitisAXIWriteMaster}
-
-/**
-  * Step1: Modify VitisRTLKernelDataIF
-  */
-class VitisRTLKernelDataIF extends Bundle {
-  // Register Args
-  val readAddress = Input(UInt(64.W))
-  val readLength = Input(UInt(64.W))
-  val writeAddress = Input(UInt(64.W))
-  // add your register args here...
-
-  // HBM/DDR ports
-  val m00Read = new VitisAXIReadMaster(64, 512)
-  val m00Write = new VitisAXIWriteMaster(64, 512)
-  // add your memory ports here...
-}
+import pe.TOPSdpmm
+import vitiskerneldata.VitisRTLKernelDataIF
 
 class VitisRTLKernel extends RawModule {
 
   val ap_clk = IO(Input(Clock()))
   val reset_asyncReset = Wire(new AsyncReset)
   // Step2: Instantiate your kernel here
-  val kernel = withClockAndReset(ap_clk, reset_asyncReset)(Module(new VecAdd))
+  val kernel = withClockAndReset(ap_clk, reset_asyncReset)(Module(new TOPSdpmm))
 
   // !! DO NOT modify code below !!
   val ap_start = IO(Input(Bool()))

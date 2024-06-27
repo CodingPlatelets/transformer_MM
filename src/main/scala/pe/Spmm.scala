@@ -2,6 +2,7 @@ package pe
 
 import chisel3._
 import chisel3.util._
+import pe.utils._
 
 // spmm using NumDotVec via stream data input
 // using mask to choose the needed nums
@@ -33,7 +34,7 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
   OutputPipe.bits := DontCare
   OutputPipe.bits := DontCare
 
-  val maskReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(utils.maskType.W))))
+  val maskReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(common.maskType.W))))
   val numsReg = RegInit(VecInit(Seq.fill(L)(0.U(bit.W))))
   val vMatrixReg = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W))))))
   vMatrixReg := vMatrix

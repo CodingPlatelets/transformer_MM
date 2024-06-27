@@ -10,7 +10,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
   val LEN_WIDTH = 32
   val dataWidthBytes: Int = DATA_WIDTH / 8
   val addrAlignBits:  Int = log2Ceil(dataWidthBytes) // 强制地址对齐到数据位宽
-  val BURST_LEN = 64
+  val BURST_LEN = (4096 / dataWidthBytes).toInt
 
   val io = IO(new Bundle {
     val req = Flipped(Decoupled(new Bundle {
@@ -30,13 +30,40 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
   val remainLen_reg = Reg(UInt(LEN_WIDTH.W))
   val issuedLen_reg = Reg(UInt(LEN_WIDTH.W))
 
+  // using a buffer queue to enq the data from axiread
   val buffer_module = Module(
     new Queue(UInt(DATA_WIDTH.W), (BURST_LEN * 1.5).toInt)
   )
   val bufferSpace_wire = (buffer_module.entries.U - buffer_module.io.count)
+
+  /**
+    * Checks if the address stored in the `addr_reg` variable is aligned to a 4K boundary.
+    *
+    * @return true if the address is aligned to a 4K boundary, false otherwise.
+    */
   val isAlignedTo4KBoundry_wire = ((addr_reg & Fill(12, 1.U)) === 0.U)
+
+  /**
+    * Calculates the next 4K boundary wire based on the value of `addr_reg`.
+    *
+    * @param addr_reg The current address register value.
+    * @return The next 4K boundary wire.
+    */
+  /**
+    * Calculates the next 4K boundary wire based on the value of `addr_reg`.
+    *
+    * @param addr_reg The current address register value.
+    * @return The next 4K boundary wire.
+    */
   val next4KBoundary_wire = ((addr_reg + 4096.U) & (~"hfff".U(ADDR_WIDTH.W)).asUInt)
+
+  /**
+    * Checks if the next 4K boundary is less than (addr_reg and the len_reg << log2Ceil(dataWidthBytes))
+    *
+    * @return true if the next 4K boundary is less than than (addr_reg and the len_reg << log2Ceil(dataWidthBytes)), false otherwise.
+    */
   val isAcross4KBoundry_wire = next4KBoundary_wire < (addr_reg + (len_reg << addrAlignBits))
+
   io.req.ready := false.B
   io.axiRead.ar.valid := false.B
   io.axiRead.ar.bits := 0.U.asTypeOf(io.axiRead.ar.bits)
@@ -83,6 +110,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
 
       }
     }
+
     is(sHeadAddr) {
       debugLog("sHeadAddr\n")
       val headLen_wire: UInt = ((next4KBoundary_wire - addr_reg) >> addrAlignBits).asUInt
@@ -96,6 +124,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
         }
       }
     }
+
     is(sHeadData) {
       debugLog("sHeadData\n")
       io.axiRead.r.ready := buffer_module.io.enq.ready
@@ -112,6 +141,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
         }
       }
     }
+
     is(s4KAlignedAddr) {
       debugLog("s4KAlignedAddr\n")
       when(bufferSpace_wire > BURST_LEN.U) {
@@ -124,6 +154,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
         }
       }
     }
+
     is(s4KAlignedData) {
       debugLog("s4KAlignedData\n")
       io.axiRead.r.ready := buffer_module.io.enq.ready
@@ -140,6 +171,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
         }
       }
     }
+
     is(sTailAddr) {
       //debugLog("sTailAddr\n")
       when(bufferSpace_wire > remainLen_reg) {
@@ -151,6 +183,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
         }
       }
     }
+
     is(sTailData) {
       //debugLog("sTailData\n")
       io.axiRead.r.ready := buffer_module.io.enq.ready
@@ -161,6 +194,7 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
         state_reg := sFlush
       }
     }
+
     is(sFlush) {
       //debugLog("sFlush\n")
       // 等待 buffer 中数据读取完

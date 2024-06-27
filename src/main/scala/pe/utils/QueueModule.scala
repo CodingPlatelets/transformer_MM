@@ -1,4 +1,5 @@
-package pe
+package pe.utils
+
 import chisel3._
 import chisel3.util._
 

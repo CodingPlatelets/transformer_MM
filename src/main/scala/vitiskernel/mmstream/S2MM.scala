@@ -10,7 +10,7 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
   val LEN_WIDTH = 32
   val dataWidthBytes: Int = DATA_WIDTH / 8
   val addrAlignBits:  Int = log2Ceil(dataWidthBytes) // 强制地址对齐到数据位宽
-  val BURST_LEN = 64
+  val BURST_LEN = (4096 / dataWidthBytes).toInt
 
   val io = IO(new Bundle {
     val req = Flipped(Decoupled(new Bundle {
