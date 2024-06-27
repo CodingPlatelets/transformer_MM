@@ -4,6 +4,12 @@ test_run_dir/*
 # intermediate build files
 hw/*
 project/*
+xsim.dir/*
+xo_kernel/hw_emu/*
+xo_kernel/hw/*
+*kernels.csv
+*.protoinst
+*.wdb
 *.info
 *.xclbin
 *.xml
