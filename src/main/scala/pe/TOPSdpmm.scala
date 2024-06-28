@@ -34,6 +34,7 @@ class TOPSdpmm extends Module {
     kWriteReqIssuedReg := true.B
   }
   val kLine = Wire(UInt(common.DATA_WIDTH.W))
+
   // size: 2MB
   val kIntReg = RegInit(0.U((32 * common.DATA_WIDTH).W))
 
@@ -41,19 +42,26 @@ class TOPSdpmm extends Module {
   s2mm_k.io.streamIn.valid := mm2s_k.io.streamOut.valid
   kLine := mm2s_k.io.streamOut.bits.data.asTypeOf(chiselTypeOf(kLine))
 
+  val kLineOut = Wire(Vec(32, UInt(16.W)))
+  kLineOut
+    .zip(kLine.asTypeOf(kLineOut))
+    .foreach(p => {
+      p._1 := p._2 + 10.U
+    })
+
   when(mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready) {
     kIntReg := kLine + kIntReg << common.DATA_WIDTH
   }
-  s2mm_k.io.streamIn.bits.data := kLine.asUInt
+  s2mm_k.io.streamIn.bits.data := kLineOut.asUInt
   s2mm_k.io.streamIn.bits.last := mm2s_k.io.streamOut.bits.last
 
-  val kFinished = RegInit(false.B)
-  val (_, kWarp) = Counter(0 until 32, mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready)
-  kFinished := Mux(kWarp, true.B, false.B)
-  val kReg = Reg(Vec(32, Vec(32, UInt(16.W))))
-  when(kFinished) {
-    kReg := kIntReg.asTypeOf(chiselTypeOf(kReg))
-  }
+  // val kFinished = RegInit(false.B)
+  // val (_, kWarp) = Counter(0 until 32, mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready)
+  // kFinished := Mux(kWarp, true.B, false.B)
+  // val kReg = Reg(Vec(32, Vec(32, UInt(16.W))))
+  // when(kFinished) {
+  //   kReg := kIntReg.asTypeOf(chiselTypeOf(kReg))
+  // }
 
   //////////////////////////  VMatrix  ////////////////////
   val vReadReqIssuedReg = RegInit(false.B)
@@ -82,20 +90,26 @@ class TOPSdpmm extends Module {
   s2mm_v.io.streamIn.valid := mm2s_v.io.streamOut.valid
 
   vLine := mm2s_v.io.streamOut.bits.data.asTypeOf(chiselTypeOf(vLine))
+  val vLineOut = Wire(Vec(32, UInt(16.W)))
+  vLineOut
+    .zip(vLine.asTypeOf(vLineOut))
+    .foreach(p => {
+      p._1 := p._2 + 20.U
+    })
 
   when(mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready) {
     vIntReg := vLine + vIntReg << common.DATA_WIDTH
   }
-  s2mm_v.io.streamIn.bits.data := vLine.asUInt
+  s2mm_v.io.streamIn.bits.data := vLineOut.asUInt
   s2mm_v.io.streamIn.bits.last := mm2s_v.io.streamOut.bits.last
 
-  val vFinished = RegInit(false.B)
-  val (_, vWarp) = Counter(0 until 32, mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready)
-  vFinished := Mux(vWarp, true.B, false.B)
-  val vReg = Reg(Vec(32, Vec(32, UInt(16.W))))
-  when(vFinished) {
-    vReg := vIntReg.asTypeOf(chiselTypeOf(vReg))
-  }
+  // val vFinished = RegInit(false.B)
+  // val (_, vWarp) = Counter(0 until 32, mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready)
+  // vFinished := Mux(vWarp, true.B, false.B)
+  // val vReg = Reg(Vec(32, Vec(32, UInt(16.W))))
+  // when(vFinished) {
+  //   vReg := vIntReg.asTypeOf(chiselTypeOf(vReg))
+  // }
 
   ////////////////////////  Pipe Data Flow  ////////////////////////
   // 在 reset 直接开始执行，执行结束后将 done 置位即可

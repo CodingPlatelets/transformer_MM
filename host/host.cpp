@@ -38,12 +38,16 @@ int main(int argc, char **args) {
   // kMatrix datawidth is 32 * 16 = 512
   const size_t dim_num = 32;
   const size_t length_num = 32;
-  auto kMatrix = new uint16_t[length_num][dim_num];
-  auto kMatrix_out = new uint16_t[length_num][dim_num];
+
+  auto kMatrix = new uint16_t[length_num * dim_num];
+
+  // auto kMatrix_out = new uint16_t[length_num][dim_num];
+  auto *kMatrix_out = new uint16_t[length_num * dim_num];
+
   for (size_t i = 0; i < length_num; i++) {
     for (size_t j = 0; j < dim_num; j++) {
-      kMatrix[i][j] = i * j % 16;
-      kMatrix_out[i][j] = 0;
+      kMatrix[i * length_num + j] = i * j % 16;
+      kMatrix_out[i * length_num + j] = 0;
     }
   }
 
@@ -52,7 +56,7 @@ int main(int argc, char **args) {
   for (size_t i = 0; i < length_num; i++) {
     for (size_t j = 0; j < dim_num; j++) {
       vMatrix[i][j] = i + j % 16;
-      vMatrix_out[i][j] = 0;
+      // vMatrix_out[i][j] = 0;
     }
   }
 
@@ -99,10 +103,14 @@ int main(int argc, char **args) {
   auto read_buffer = xrt::bo(device, buffer_size, krnl.group_id(3));
   auto write_buffer = xrt::bo(device, buffer_size, krnl.group_id(4));
 
-  auto krbuffer = xrt::bo(device, sizeof(kMatrix), krnl.group_id(5));
-  auto kwbuffer = xrt::bo(device, sizeof(kMatrix), krnl.group_id(6));
-  auto vrbuffer = xrt::bo(device, sizeof(vMatrix), krnl.group_id(7));
-  auto vwbuffer = xrt::bo(device, sizeof(vMatrix), krnl.group_id(8));
+  auto krbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
+                          krnl.group_id(5));
+  auto kwbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
+                          krnl.group_id(6));
+  auto vrbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
+                          krnl.group_id(7));
+  auto vwbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
+                          krnl.group_id(8));
 
   // 输入数据传输到 board
   std::cout << "write_buffer size: "
@@ -148,9 +156,10 @@ int main(int argc, char **args) {
 
   for (size_t i = 0; i < length_num; i++) {
     for (size_t j = 0; j < dim_num; j++) {
-      std::cout << "kmatrix[" << i << "][" << j << "]:" << kMatrix[i][j]
-                << " kmatrix_out[" << i << "][" << j
-                << "]:" << kMatrix_out[i][j] << std::endl;
+      std::cout << "kmatrix[" << i << "][" << j
+                << "]:" << kMatrix[i * length_num + j] << " kmatrix_out[" << i
+                << "][" << j << "]:" << kMatrix_out[i * length_num + j]
+                << std::endl;
     }
   }
 
@@ -168,6 +177,8 @@ int main(int argc, char **args) {
   delete[] output_data;
   delete[] kMatrix;
   delete[] kMatrix_out;
+  // delete[] kMatrix;
+  // delete[] kMatrix_out;
   delete[] vMatrix;
   delete[] vMatrix_out;
 
