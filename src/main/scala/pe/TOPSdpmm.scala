@@ -14,6 +14,16 @@ class TOPSdpmm extends Module {
     val done = Output(Bool())
   })
 
+  val sdpmmModule = Module(
+    new Sdpmm(
+      SdpmmConfigs.bit,
+      SdpmmConfigs.dim,
+      SdpmmConfigs.L,
+      SdpmmConfigs.numOfMask,
+      SdpmmConfigs.queueSize
+    )
+  )
+
   //////////////////////////  KMatrix  ////////////////////////
   val kReadReqIssuedReg = RegInit(false.B)
   val kWriteReqIssuedReg = RegInit(false.B)
@@ -50,18 +60,17 @@ class TOPSdpmm extends Module {
     })
 
   when(mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready) {
-    kIntReg := kLine + kIntReg << common.DATA_WIDTH
+    kIntReg := kLine + (kIntReg << common.DATA_WIDTH)
   }
   s2mm_k.io.streamIn.bits.data := kLineOut.asUInt
   s2mm_k.io.streamIn.bits.last := mm2s_k.io.streamOut.bits.last
 
-  // val kFinished = RegInit(false.B)
-  // val (_, kWarp) = Counter(0 until 32, mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready)
-  // kFinished := Mux(kWarp, true.B, false.B)
-  // val kReg = Reg(Vec(32, Vec(32, UInt(16.W))))
-  // when(kFinished) {
-  //   kReg := kIntReg.asTypeOf(chiselTypeOf(kReg))
-  // }
+  val kFinished = RegInit(false.B)
+  val (_, kWarp) = Counter(0 until 32, mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready)
+  kFinished := Mux(kWarp, true.B, false.B)
+  sdpmmModule.io.kMatrix := kIntReg.asTypeOf(
+    chiselTypeOf(Reg(Vec(SdpmmConfigs.L, Vec(SdpmmConfigs.dim, UInt(16.W)))))
+  )
 
   //////////////////////////  VMatrix  ////////////////////
   val vReadReqIssuedReg = RegInit(false.B)
@@ -98,18 +107,17 @@ class TOPSdpmm extends Module {
     })
 
   when(mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready) {
-    vIntReg := vLine + vIntReg << common.DATA_WIDTH
+    vIntReg := vLine + (vIntReg << common.DATA_WIDTH)
   }
   s2mm_v.io.streamIn.bits.data := vLineOut.asUInt
   s2mm_v.io.streamIn.bits.last := mm2s_v.io.streamOut.bits.last
 
-  // val vFinished = RegInit(false.B)
-  // val (_, vWarp) = Counter(0 until 32, mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready)
-  // vFinished := Mux(vWarp, true.B, false.B)
-  // val vReg = Reg(Vec(32, Vec(32, UInt(16.W))))
-  // when(vFinished) {
-  //   vReg := vIntReg.asTypeOf(chiselTypeOf(vReg))
-  // }
+  val vFinished = RegInit(false.B)
+  val (_, vWarp) = Counter(0 until 32, mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready)
+  vFinished := Mux(vWarp, true.B, false.B)
+  sdpmmModule.io.vMatrix := vIntReg.asTypeOf(
+    chiselTypeOf(Reg(Vec(SdpmmConfigs.L, Vec(SdpmmConfigs.dim, UInt(16.W)))))
+  )
 
   ////////////////////////  Pipe Data Flow  ////////////////////////
   // 在 reset 直接开始执行，执行结束后将 done 置位即可
@@ -135,37 +143,25 @@ class TOPSdpmm extends Module {
     writeReqIssuedReg := true.B
   }
 
-  s2mm_pipe.io.streamIn.valid := mm2s_pipe.io.streamOut.valid
-  mm2s_pipe.io.streamOut.ready := s2mm_pipe.io.streamIn.ready
+  // s2mm_pipe.io.streamIn.valid := mm2s_pipe.io.streamOut.valid
+  // mm2s_pipe.io.streamOut.ready := s2mm_pipe.io.streamIn.ready
 
   // 32 * 16 + 32 * maskType(16) = 1024
-  val inPipeData = Wire(new PipeValue(UInt(16.W), 32, 32))
-  val outPipeData = Wire(new PipeValue(UInt(16.W), 32, 32))
+  val inPipeData = Wire(new PipeValue(UInt(SdpmmConfigs.bit.W), SdpmmConfigs.dim, SdpmmConfigs.numOfMask))
 
   // data prepare
   inPipeData := mm2s_pipe.io.streamOut.bits.data.asTypeOf(chiselTypeOf(inPipeData))
-  outPipeData.value
-    .zip(inPipeData.value)
-    .foreach(p => {
-      p._1 := p._2 + 100.U
-    })
+  sdpmmModule.InputPipe.bits := inPipeData
+  sdpmmModule.InputPipe.valid := mm2s_pipe.io.streamOut.valid && kFinished && vFinished
+  mm2s_pipe.io.streamOut.ready := sdpmmModule.InputPipe.ready
+  mm2s_pipe.io.streamOut.bits.last := DontCare
 
-  outPipeData.value(0) := 999.U
-
-  outPipeData.mask
-    .zip(inPipeData.mask)
-    .foreach(p => {
-      p._1 := p._2 + 50.U
-    })
-
-  // outputData_wire
-  //   .zip(inputData_wire)
-  //   .foreach(p => {
-  //     p._1 := p._2 + 47.U
-  //   })
-  s2mm_pipe.io.streamIn.bits.data := outPipeData.asUInt
-  s2mm_pipe.io.streamIn.bits.last := mm2s_pipe.io.streamOut.bits.last
+  sdpmmModule.OutputPipe.ready := s2mm_pipe.io.streamIn.ready
+  s2mm_pipe.io.streamIn.valid := sdpmmModule.OutputPipe.valid
+  s2mm_pipe.io.streamIn.bits.data := sdpmmModule.OutputPipe.bits.asUInt
+  s2mm_pipe.io.streamIn.bits.last := sdpmmModule.OutputPipe.bits.asUInt.asBools.last
 
   io.done := readReqIssuedReg && writeReqIssuedReg && !mm2s_pipe.io.busy && !s2mm_pipe.io.busy &&
-    kReadReqIssuedReg && kWriteReqIssuedReg && !mm2s_k.io.busy && !s2mm_k.io.busy
+    kReadReqIssuedReg && kWriteReqIssuedReg && !mm2s_k.io.busy && !s2mm_k.io.busy && vReadReqIssuedReg &&
+    vWriteReqIssuedReg && !mm2s_v.io.busy && !s2mm_v.io.busy
 }

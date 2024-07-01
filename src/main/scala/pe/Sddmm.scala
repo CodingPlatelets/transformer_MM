@@ -39,8 +39,8 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
     pes(i).io := DontCare
   }
   val tempReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(bit.W))))
-  val tempK = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(D)(0.U(bit.W))))))
-  tempK := kMatrix
+  // val tempK = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(D)(0.U(bit.W))))))
+  // tempK := kMatrix
 
 //  val dataValid = WireInit(inMaskQueue.io.deq.valid && qVecQueue.io.deq.valid)
   val dataValid = WireInit(InputQueue.io.deq.valid)
@@ -62,7 +62,7 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
     when(!warp && !finishedButNoAccepted) {
       for (i <- 0 until numOfMask) {
         pes(i).io.inLeft := tempQ(cnt)
-        pes(i).io.inTop := tempK(tempMask(i))(cnt)
+        pes(i).io.inTop := kMatrix(tempMask(i))(cnt)
         pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempReg(i))
         pes(i).io.controlSign := ControlSignalSel.SDDMM
         tempReg(i) := pes(i).io.outReg

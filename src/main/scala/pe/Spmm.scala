@@ -36,8 +36,8 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
 
   val maskReg = RegInit(VecInit(Seq.fill(numOfMask)(0.U(common.maskType.W))))
   val numsReg = RegInit(VecInit(Seq.fill(L)(0.U(bit.W))))
-  val vMatrixReg = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W))))))
-  vMatrixReg := vMatrix
+  // val vMatrixReg = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(dimV)(0.U(bit.W))))))
+  // vMatrixReg := vMatrix
 
   val busy = RegInit(false.B)
   InputQueue.io.deq.ready := !busy
@@ -62,7 +62,7 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
     when(!warp && !finishedButNoAccepted) {
       for (i <- 0 until dimV) {
         pes(i).io.controlSign := ControlSignalSel.SPMM
-        pes(i).io.inTop := vMatrixReg(maskReg(cnt))(i)
+        pes(i).io.inTop := vMatrix(maskReg(cnt))(i)
         pes(i).io.inLeft := numsReg(maskReg(cnt))
         pes(i).io.inReg := Mux(cnt === 0.U, 0.U, tempRegVec(i))
         tempRegVec(i) := pes(i).io.outReg

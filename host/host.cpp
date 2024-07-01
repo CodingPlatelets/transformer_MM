@@ -2,7 +2,9 @@
 #include <xrt/xrt_bo.h>
 #include <xrt/xrt_kernel.h>
 
+#include <array>
 #include <iostream>
+#include <random>
 
 void wait_for_enter(const std::string &msg) {
   std::cout << msg << std::endl;
@@ -35,28 +37,32 @@ int main(int argc, char **args) {
 
   std::cout << "The krnl name is " << krnl.get_name() << std::endl;
 
+  std::random_device dev;
+  std::mt19937 rng(dev());
+  std::uniform_int_distribution<std::mt19937::result_type> rand10(1, 10);
+
   // kMatrix datawidth is 32 * 16 = 512
-  const size_t dim_num = 32;
-  const size_t length_num = 32;
+  const auto dim_num = 32;
+  const auto length_num = 32;
 
-  auto kMatrix = new uint16_t[length_num * dim_num];
+  typedef std::array<std::array<uint16_t, length_num>, dim_num> kvMatrix_type;
 
-  // auto kMatrix_out = new uint16_t[length_num][dim_num];
-  auto *kMatrix_out = new uint16_t[length_num * dim_num];
+  kvMatrix_type kMatrix;
+  kvMatrix_type kMatrix_out;
 
   for (size_t i = 0; i < length_num; i++) {
     for (size_t j = 0; j < dim_num; j++) {
-      kMatrix[i * length_num + j] = i * j % 16;
-      kMatrix_out[i * length_num + j] = 0;
+      kMatrix[i][j] = i * j % 16;
+      kMatrix_out[i][j] = 0;
     }
   }
 
-  auto vMatrix = new uint16_t[length_num][dim_num];
-  auto vMatrix_out = new uint16_t[length_num][dim_num];
+  kvMatrix_type vMatrix;
+  kvMatrix_type vMatrix_out;
   for (size_t i = 0; i < length_num; i++) {
     for (size_t j = 0; j < dim_num; j++) {
       vMatrix[i][j] = i + j % 16;
-      // vMatrix_out[i][j] = 0;
+      vMatrix_out[i][j] = 0;
     }
   }
 
@@ -70,13 +76,13 @@ int main(int argc, char **args) {
   const int length = 1;
   const size_t all_data = (value_num * 2 + mask_num * 2) * length / 128;
   typedef struct InputData {
-    uint16_t value[value_num];
-    uint16_t mask[mask_num];
+    std::array<uint16_t, value_num> value;
+    std::array<uint16_t, mask_num> mask;
     // uint16_t align[align_num];
   } pipe_data;
 
-  pipe_data *input_data = new pipe_data[length];
-  pipe_data *output_data = new pipe_data[length];
+  std::array<pipe_data, length> input_data;
+  std::array<pipe_data, length> output_data;
 
   for (int j = 1; j <= length; j++) {
     for (size_t i = 0; i < value_num; i++) {
@@ -89,40 +95,29 @@ int main(int argc, char **args) {
   auto buffer_size =
       (value_num * sizeof(uint16_t) + mask_num * sizeof(uint16_t)) * length;
 
-  // const size_t data_num = 128;
-  // uint32_t input_data[data_num];
-  // uint32_t output_data[data_num];
-  // for (size_t i = 0; i < data_num; i++) {
-  //   input_data[i] = i % 96;
-  // }
-
-  // auto buffer_size = data_num * sizeof(uint32_t);
+  const auto kvMatrix_buffer_size = length_num * dim_num * sizeof(uint16_t);
 
   wait_for_enter("setup ila and [Enter] to continue...");
   // allocate buffer on board
   auto read_buffer = xrt::bo(device, buffer_size, krnl.group_id(3));
   auto write_buffer = xrt::bo(device, buffer_size, krnl.group_id(4));
 
-  auto krbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
-                          krnl.group_id(5));
-  auto kwbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
-                          krnl.group_id(6));
-  auto vrbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
-                          krnl.group_id(7));
-  auto vwbuffer = xrt::bo(device, (length_num * dim_num) * sizeof(uint16_t),
-                          krnl.group_id(8));
+  auto krbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(5));
+  auto kwbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(6));
+  auto vrbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(7));
+  auto vwbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(8));
 
   // 输入数据传输到 board
   std::cout << "write_buffer size: "
             << read_buffer.size() + krbuffer.size() + vrbuffer.size()
             << std::endl;
-  read_buffer.write(input_data);
+  read_buffer.write(input_data.data());
   read_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-  krbuffer.write(kMatrix);
+  krbuffer.write(kMatrix.data());
   krbuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-  vrbuffer.write(vMatrix);
+  vrbuffer.write(vMatrix.data());
   vrbuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
   // for vec add 16*32.W
@@ -133,13 +128,13 @@ int main(int argc, char **args) {
 
   // 计算结果从 board read 回 host
   write_buffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-  write_buffer.read(output_data);
+  write_buffer.read(output_data.data());
 
   kwbuffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-  kwbuffer.read(kMatrix_out);
+  kwbuffer.read(kMatrix_out.data());
 
   vwbuffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-  vwbuffer.read(vMatrix_out);
+  vwbuffer.read(vMatrix_out.data());
 
   // check result
   for (int j = 0; j < length; j++) {
@@ -156,10 +151,8 @@ int main(int argc, char **args) {
 
   for (size_t i = 0; i < length_num; i++) {
     for (size_t j = 0; j < dim_num; j++) {
-      std::cout << "kmatrix[" << i << "][" << j
-                << "]:" << kMatrix[i * length_num + j] << " kmatrix_out[" << i
-                << "][" << j << "]:" << kMatrix_out[i * length_num + j]
-                << std::endl;
+      std::cout << "k[" << i << "][" << j << "]:" << kMatrix[i][j] << " k_out["
+                << i << "][" << j << "]:" << kMatrix_out[i][j] << std::endl;
     }
   }
 
@@ -167,29 +160,8 @@ int main(int argc, char **args) {
 
   for (size_t i = 0; i < length_num; i++) {
     for (size_t j = 0; j < dim_num; j++) {
-      std::cout << "vMatrix[" << i << "][" << j << "]:" << vMatrix[i][j]
-                << " vMatrix_out[" << i << "][" << j
-                << "]:" << vMatrix_out[i][j] << std::endl;
+      std::cout << "v[" << i << "][" << j << "]:" << vMatrix[i][j] << " v_out["
+                << i << "][" << j << "]:" << vMatrix_out[i][j] << std::endl;
     }
   }
-
-  delete[] input_data;
-  delete[] output_data;
-  delete[] kMatrix;
-  delete[] kMatrix_out;
-  // delete[] kMatrix;
-  // delete[] kMatrix_out;
-  delete[] vMatrix;
-  delete[] vMatrix_out;
-
-  // for (size_t i = 0; i < data_num; i++) {
-  //   // assert(input_data[i] + 47 == output_data[i]);
-  //   if (input_data[i] + 47 != output_data[i]) {
-  //     std::cout << "error: index is " << i << " input: " << input_data[i]
-  //               << " output:" << output_data[i] << std::endl;
-  //   } else {
-  //     std::cout << "index is " << i << " input:" << input_data[i]
-  //               << " output:" << output_data[i] << std::endl;
-  //   }
-  // }
 }
