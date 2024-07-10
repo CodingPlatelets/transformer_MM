@@ -22,10 +22,10 @@ int main(int argc, char **args) {
   //   std::string device_name = "0000:3d:00.1";
   std::cout << "Open the device " << device_index << std::endl;
   auto device = xrt::device(device_index);
-  std::cout << "device name:     " << device.get_info<xrt::info::device::name>()
-            << "\n";
-  std::cout << "device bdf:      " << device.get_info<xrt::info::device::bdf>()
-            << "\n";
+  std::cout << "device name:  " << device.get_info<xrt::info::device::name>()
+            << std::endl;
+  std::cout << "device bdf: " << device.get_info<xrt::info::device::bdf>()
+            << std::endl;
 
   std::string xclbin_path(args[1]);
   std::cout << "Load the xclbin " << xclbin_path << std::endl;
@@ -37,31 +37,39 @@ int main(int argc, char **args) {
 
   std::cout << "The krnl name is " << krnl.get_name() << std::endl;
 
+  /**
+   * @brief generate random test input data and kv data
+   */
   std::random_device dev;
   std::mt19937 rng(dev());
   std::uniform_int_distribution<std::mt19937::result_type> rand10(1, 10);
 
   // kMatrix datawidth is 32 * 16 = 512
   const auto dim_num = 32;
-  const auto length_num = 32;
+  const auto length_num = 96;
 
-  typedef std::array<std::array<uint16_t, length_num>, dim_num> kvMatrix_type;
+  std::uniform_int_distribution<std::mt19937::result_type> rand_L(1,
+                                                                  length_num);
 
-  kvMatrix_type kMatrix;
-  kvMatrix_type kMatrix_out;
+  std::cout << "tttttttesttttttttt" << std::endl;
 
-  for (size_t i = 0; i < length_num; i++) {
-    for (size_t j = 0; j < dim_num; j++) {
-      kMatrix[i][j] = i * j % 16;
+  using kvMatrix_type = uint16_t;
+
+  auto kMatrix = new kvMatrix_type[length_num][dim_num];
+  auto kMatrix_out = new kvMatrix_type[length_num][dim_num];
+
+  for (auto i = 0; i < length_num; i++) {
+    for (auto j = 0; j < dim_num; j++) {
+      kMatrix[i][j] = (i + j) % 32;
       kMatrix_out[i][j] = 0;
     }
   }
 
-  kvMatrix_type vMatrix;
-  kvMatrix_type vMatrix_out;
-  for (size_t i = 0; i < length_num; i++) {
-    for (size_t j = 0; j < dim_num; j++) {
-      vMatrix[i][j] = i + j % 16;
+  auto vMatrix = new kvMatrix_type[length_num][dim_num];
+  auto vMatrix_out = new kvMatrix_type[length_num][dim_num];
+  for (auto i = 0; i < length_num; i++) {
+    for (auto j = 0; j < dim_num; j++) {
+      vMatrix[i][j] = (i + j + 1) % 32;
       vMatrix_out[i][j] = 0;
     }
   }
@@ -75,69 +83,84 @@ int main(int argc, char **args) {
 
   const int length = 1;
   const size_t all_data = (value_num * 2 + mask_num * 2) * length / 128;
-  typedef struct InputData {
+  using pipe_data = struct InputData {
     std::array<uint16_t, value_num> value;
     std::array<uint16_t, mask_num> mask;
     // uint16_t align[align_num];
-  } pipe_data;
+  };
 
-  std::array<pipe_data, length> input_data;
-  std::array<pipe_data, length> output_data;
+  auto input_data = new pipe_data[length];
+  auto output_data = new pipe_data[length];
 
   for (int j = 1; j <= length; j++) {
+    // std::generate(input_data[j - 1].mask.begin(), input_data[j -
+    // 1].mask.end(),
+    //               [&]() { return rand_L(rng); });
+    // std::generate(input_data[j - 1].value.begin(),
+    //               input_data[j - 1].value.end(), [&]() { return rand10(rng);
+    //               });
     for (size_t i = 0; i < value_num; i++) {
-      input_data[j - 1].value[i] = j * i % 128;
-      input_data[j - 1].mask[i] = (2 * i * j) % 128;
+      input_data[j - 1].value[i] = rand10(rng);
+      input_data[j - 1].mask[i] = rand_L(rng);
       // input_data[j - 1].align[i] = 0;
     }
   }
 
-  auto buffer_size =
+  for (auto j = 0; j < length; j++) {
+    for (size_t i = 0; i < value_num; i++) {
+      std::cout << "input_value:" << input_data[j].value[i] << std::endl;
+      std::cout << "input_mask:" << input_data[j].mask[i] << std::endl;
+    }
+    std::cout << std::endl;
+  }
+
+  const auto buffer_size =
       (value_num * sizeof(uint16_t) + mask_num * sizeof(uint16_t)) * length;
 
   const auto kvMatrix_buffer_size = length_num * dim_num * sizeof(uint16_t);
 
   wait_for_enter("setup ila and [Enter] to continue...");
   // allocate buffer on board
-  auto read_buffer = xrt::bo(device, buffer_size, krnl.group_id(3));
-  auto write_buffer = xrt::bo(device, buffer_size, krnl.group_id(4));
+  auto read_buffer = xrt::bo(device, buffer_size, krnl.group_id(4));
+  auto write_buffer = xrt::bo(device, buffer_size, krnl.group_id(5));
 
-  auto krbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(5));
-  auto kwbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(6));
-  auto vrbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(7));
-  auto vwbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(8));
+  auto krbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(6));
+  auto kwbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(7));
+  auto vrbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(8));
+  auto vwbuffer = xrt::bo(device, kvMatrix_buffer_size, krnl.group_id(9));
 
   // 输入数据传输到 board
   std::cout << "write_buffer size: "
             << read_buffer.size() + krbuffer.size() + vrbuffer.size()
             << std::endl;
-  read_buffer.write(input_data.data());
+  read_buffer.write(input_data);
   read_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-  krbuffer.write(kMatrix.data());
+  krbuffer.write(kMatrix);
   krbuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-  vrbuffer.write(vMatrix.data());
+  vrbuffer.write(vMatrix);
   vrbuffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
+  auto input_numberof_lines = 1;
   // for vec add 16*32.W
-  auto run = krnl(all_data, kv_data, kv_data, read_buffer, write_buffer,
-                  krbuffer, kwbuffer, vrbuffer, vwbuffer);
+  auto run = krnl(all_data, kv_data, kv_data, input_numberof_lines, read_buffer,
+                  write_buffer, krbuffer, kwbuffer, vrbuffer, vwbuffer);
   // auto run = krnl(data_num * 4 / 64, read_buffer, write_buffer);
   run.wait();
 
   // 计算结果从 board read 回 host
   write_buffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-  write_buffer.read(output_data.data());
+  write_buffer.read(output_data);
 
   kwbuffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-  kwbuffer.read(kMatrix_out.data());
+  kwbuffer.read(kMatrix_out);
 
   vwbuffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-  vwbuffer.read(vMatrix_out.data());
+  vwbuffer.read(vMatrix_out);
 
   // check result
-  for (int j = 0; j < length; j++) {
+  for (auto j = 0; j < length; j++) {
     for (size_t i = 0; i < value_num; i++) {
       // assert(input_data[i] + 47 == output_data[i]);
       std::cout << "input_value:" << input_data[j].value[i]
@@ -149,8 +172,8 @@ int main(int argc, char **args) {
     std::cout << std::endl;
   }
 
-  for (size_t i = 0; i < length_num; i++) {
-    for (size_t j = 0; j < dim_num; j++) {
+  for (auto i = 0; i < length_num; i++) {
+    for (auto j = 0; j < dim_num; j++) {
       std::cout << "k[" << i << "][" << j << "]:" << kMatrix[i][j] << " k_out["
                 << i << "][" << j << "]:" << kMatrix_out[i][j] << std::endl;
     }
@@ -158,10 +181,15 @@ int main(int argc, char **args) {
 
   std::cout << std::endl;
 
-  for (size_t i = 0; i < length_num; i++) {
-    for (size_t j = 0; j < dim_num; j++) {
+  for (auto i = 0; i < length_num; i++) {
+    for (auto j = 0; j < dim_num; j++) {
       std::cout << "v[" << i << "][" << j << "]:" << vMatrix[i][j] << " v_out["
                 << i << "][" << j << "]:" << vMatrix_out[i][j] << std::endl;
     }
   }
+
+  delete[] kMatrix;
+  delete[] kMatrix_out;
+  delete[] vMatrix;
+  delete[] vMatrix_out;
 }

@@ -21,6 +21,8 @@ class VitisRTLKernelDataIF extends Bundle {
   val vReadAddress = Input(UInt(64.W))
   val vWriteAddress = Input(UInt(64.W))
 
+  val inputNumTimes = Input(UInt(32.W))
+
   // HBM/DDR ports
   val m00Read = new VitisAXIReadMaster(64, common.PIPE_DATA_WIDTH)
   val m00Write = new VitisAXIWriteMaster(64, common.PIPE_DATA_WIDTH)

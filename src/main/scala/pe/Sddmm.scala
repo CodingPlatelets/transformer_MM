@@ -3,6 +3,7 @@ package pe
 import chisel3._
 import chisel3.util._
 import pe.utils._
+import vitiskernel.util.DebugLog
 
 class VecDotVecTree(val dim: Int) extends Module {
 
@@ -20,7 +21,8 @@ class VecDotVecTree(val dim: Int) extends Module {
 
 // todo: cannot create pes dynamically, so we must fix the numOfMask, but we can set a min numOfMask and schedule it in the future
 class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4, val queueSize: Int = 2)
-    extends Module {
+    extends Module
+    with DebugLog {
 
   // L x D matrix for row dot row
   val kMatrix = IO(Input(Vec(L, Vec(D, UInt(bit.W)))))
@@ -29,7 +31,7 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
   val OutputPipe = IO(Decoupled(new PipeValue(UInt(bit.W), L, numOfMask)))
 
   val InputQueue = Module(
-    new Queue(new PipeValue(UInt(bit.W), D, numOfMask), queueSize, pipe = true, flow = false, useSyncReadMem = false)
+    new Queue(new PipeValue(UInt(bit.W), D, numOfMask), queueSize, pipe = false, flow = false, useSyncReadMem = false)
   )
 
   InputQueue.io.enq <> InputPipe
@@ -101,6 +103,16 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
     }
   }
 
+  debugLog(
+    p"sddmm:\n " +
+      p"current cnt is ${cnt}" +
+      p"current tempRegVec(0) is ${tempQ(0)} " +
+      p"current pes.io.outReg is ${pes(0).io.outReg} " +
+      p"current pes.io.inTop is ${pes(0).io.inTop} " +
+      p"current pes.io.inLeft is ${pes(0).io.inLeft} " +
+      p"current pes.io.inReg is ${pes(0).io.inReg} " +
+      p"current inQueue Count is ${InputQueue.io.count}\n"
+  )
   // printf("current cnt is %d\n", cnt)
   // printf("current tempRegVec(0) is %d\n", tempReg(0))
   // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)

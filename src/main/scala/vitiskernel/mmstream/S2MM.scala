@@ -99,6 +99,7 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sHeadAddr) {
+      debugLog("sHeadAddr\n")
       io.axiWrite.aw.valid := true.B
       val burstLen_wire = Mux(buffer_module.io.count >= headLen_wire, headLen_wire, buffer_module.io.count)
       io.axiWrite.aw.bits.len := burstLen_wire - 1.U
@@ -110,6 +111,7 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sHeadData) {
+      debugLog("sHeadData\n")
       io.axiWrite.w.valid := buffer_module.io.deq.valid
       buffer_module.io.deq.ready := io.axiWrite.w.ready
       when(buffer_module.io.deq.fire) {
@@ -121,6 +123,7 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sHeadResp) {
+      debugLog("sHeadResp\n")
       io.axiWrite.b.ready := true.B
       when(io.axiWrite.b.valid) {
         state_reg := sWaitBuffer
@@ -128,6 +131,9 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sWaitBuffer) {
+      debugLog("sWaitBuffer\n")
+      debugLog(p"io.streamIn.fire:${io.streamIn.fire},\t the Eot_reg is ${eot_reg}\n")
+      debugLog(p"streamIn.valid is :${io.streamIn.valid},\t the last is ${io.streamIn.bits.last}\n")
       when(buffer_module.io.count >= BURST_LEN.U) {
         state_reg := sAddr
       }.elsewhen(eot_reg) {
@@ -140,6 +146,7 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sAddr) {
+      debugLog("sAddr\n")
       io.axiWrite.aw.valid := true.B
       val burstLen_wire = Mux(buffer_module.io.count >= BURST_LEN.U, BURST_LEN.U, buffer_module.io.count)
       io.axiWrite.aw.bits.len := burstLen_wire - 1.U
@@ -151,6 +158,7 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sData) {
+      debugLog("sData\n")
       io.axiWrite.w.valid := buffer_module.io.deq.valid
       buffer_module.io.deq.ready := io.axiWrite.w.ready
       when(buffer_module.io.deq.fire) {
@@ -162,6 +170,7 @@ class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sResp) {
+      debugLog("sResp\n")
       io.axiWrite.b.ready := true.B
       when(io.axiWrite.b.valid) {
         state_reg := sWaitBuffer

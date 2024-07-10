@@ -7,8 +7,9 @@ import vitiskernel.vitiskerneldata.VitisRTLKernelDataIF
 import utils.PipeValue
 import utils.common
 import pe.configs.SdpmmConfigs
+import vitiskernel.util.DebugLog
 
-class TOPSdpmm extends Module {
+class TOPSdpmm extends Module with DebugLog {
   val io = IO(new Bundle {
     val dataIF = (new VitisRTLKernelDataIF)
     val done = Output(Bool())
@@ -43,36 +44,17 @@ class TOPSdpmm extends Module {
   when(s2mm_k.io.req.ready) {
     kWriteReqIssuedReg := true.B
   }
-  val kLine = Wire(UInt(common.DATA_WIDTH.W))
+  val kLine = Reg(UInt(common.DATA_WIDTH.W))
 
   // size: 2MB
-  val kIntReg = RegInit(0.U((32 * common.DATA_WIDTH).W))
+  // val kIntReg = RegInit(0.U((SdpmmConfigs.L * common.DATA_WIDTH).W))
+  val kIntReg = RegInit(VecInit(Seq.fill(SdpmmConfigs.L)(VecInit(Seq.fill(SdpmmConfigs.dim)(0.U(16.W))))))
 
-  mm2s_k.io.streamOut.ready := s2mm_k.io.streamIn.ready
-  s2mm_k.io.streamIn.valid := mm2s_k.io.streamOut.valid
-  kLine := mm2s_k.io.streamOut.bits.data.asTypeOf(chiselTypeOf(kLine))
+  kLine := mm2s_k.io.streamOut.bits.data
 
-  val kLineOut = Wire(Vec(32, UInt(16.W)))
-  kLineOut
-    .zip(kLine.asTypeOf(kLineOut))
-    .foreach(p => {
-      p._1 := p._2 + 10.U
-    })
+  sdpmmModule.io.kMatrix := kIntReg
 
-  when(mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready) {
-    kIntReg := kLine + (kIntReg << common.DATA_WIDTH)
-  }
-  s2mm_k.io.streamIn.bits.data := kLineOut.asUInt
-  s2mm_k.io.streamIn.bits.last := mm2s_k.io.streamOut.bits.last
-
-  val kFinished = RegInit(false.B)
-  val (_, kWarp) = Counter(0 until 32, mm2s_k.io.streamOut.valid && s2mm_k.io.streamIn.ready)
-  kFinished := Mux(kWarp, true.B, false.B)
-  sdpmmModule.io.kMatrix := kIntReg.asTypeOf(
-    chiselTypeOf(Reg(Vec(SdpmmConfigs.L, Vec(SdpmmConfigs.dim, UInt(16.W)))))
-  )
-
-  //////////////////////////  VMatrix  ////////////////////
+  //////////////////////////  VMatrix  ///////////////////////////
   val vReadReqIssuedReg = RegInit(false.B)
   val vWriteReqIssuedReg = RegInit(false.B)
   val mm2s_v = Module(new MM2S(64, common.DATA_WIDTH))
@@ -83,41 +65,43 @@ class TOPSdpmm extends Module {
   mm2s_v.io.req.bits.len := io.dataIF.vReadLength
   s2mm_v.io.req.bits.addr := io.dataIF.vWriteAddress
 
-  mm2s_v.io.req.valid := !kReadReqIssuedReg
-  s2mm_v.io.req.valid := !kWriteReqIssuedReg
+  mm2s_v.io.req.valid := !vReadReqIssuedReg
+  s2mm_v.io.req.valid := !vWriteReqIssuedReg
   when(mm2s_v.io.req.ready) {
-    kReadReqIssuedReg := true.B
+    vReadReqIssuedReg := true.B
   }
   when(s2mm_v.io.req.ready) {
-    kWriteReqIssuedReg := true.B
+    vWriteReqIssuedReg := true.B
   }
-  val vLine = Wire(UInt(common.DATA_WIDTH.W))
+  val vLine = Reg(UInt(common.DATA_WIDTH.W))
   // size: 2MB
-  val vIntReg = RegInit(0.U((32 * common.DATA_WIDTH).W))
+  // val vIntReg = RegInit(0.U((SdpmmConfigs.L * common.DATA_WIDTH).W))
+  val vIntReg = RegInit(VecInit(Seq.fill(SdpmmConfigs.L)(VecInit(Seq.fill(SdpmmConfigs.dim)(0.U(16.W))))))
 
-  mm2s_v.io.streamOut.ready := s2mm_v.io.streamIn.ready
-  s2mm_v.io.streamIn.valid := mm2s_v.io.streamOut.valid
+  vLine := mm2s_v.io.streamOut.bits.data
 
-  vLine := mm2s_v.io.streamOut.bits.data.asTypeOf(chiselTypeOf(vLine))
-  val vLineOut = Wire(Vec(32, UInt(16.W)))
-  vLineOut
-    .zip(vLine.asTypeOf(vLineOut))
-    .foreach(p => {
-      p._1 := p._2 + 20.U
-    })
+  sdpmmModule.io.vMatrix := vIntReg
 
-  when(mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready) {
-    vIntReg := vLine + (vIntReg << common.DATA_WIDTH)
+  object state extends ChiselEnum {
+    val kvIdle, kvDataRead, kvDataWrite, SdpmmPipe = Value
   }
-  s2mm_v.io.streamIn.bits.data := vLineOut.asUInt
-  s2mm_v.io.streamIn.bits.last := mm2s_v.io.streamOut.bits.last
 
-  val vFinished = RegInit(false.B)
-  val (_, vWarp) = Counter(0 until 32, mm2s_v.io.streamOut.valid && s2mm_v.io.streamIn.ready)
-  vFinished := Mux(vWarp, true.B, false.B)
-  sdpmmModule.io.vMatrix := vIntReg.asTypeOf(
-    chiselTypeOf(Reg(Vec(SdpmmConfigs.L, Vec(SdpmmConfigs.dim, UInt(16.W)))))
-  )
+  val kvDataReady = RegInit(true.B)
+  mm2s_k.io.streamOut.ready := kvDataReady
+  mm2s_v.io.streamOut.ready := kvDataReady
+
+  val kvDataValid = RegInit(false.B)
+  s2mm_k.io.streamIn.bits.data := kLine
+  s2mm_v.io.streamIn.bits.data := vLine
+  s2mm_k.io.streamIn.valid := kvDataValid
+  s2mm_v.io.streamIn.valid := kvDataValid
+
+  val kvLineLastReg = RegInit(false.B)
+  s2mm_k.io.streamIn.bits.last := kvLineLastReg
+  s2mm_v.io.streamIn.bits.last := kvLineLastReg
+
+  val kvCnt = Counter(SdpmmConfigs.L + 1)
+  val outCnt = Counter(SdpmmConfigs.L + 1)
 
   ////////////////////////  Pipe Data Flow  ////////////////////////
   // 在 reset 直接开始执行，执行结束后将 done 置位即可
@@ -149,19 +133,97 @@ class TOPSdpmm extends Module {
   // 32 * 16 + 32 * maskType(16) = 1024
   val inPipeData = Wire(new PipeValue(UInt(SdpmmConfigs.bit.W), SdpmmConfigs.dim, SdpmmConfigs.numOfMask))
 
+  val lastReg = Reg(Bool())
+  lastReg := false.B
+
   // data prepare
+  val tState = RegInit(state.kvIdle)
   inPipeData := mm2s_pipe.io.streamOut.bits.data.asTypeOf(chiselTypeOf(inPipeData))
   sdpmmModule.InputPipe.bits := inPipeData
-  sdpmmModule.InputPipe.valid := mm2s_pipe.io.streamOut.valid && kFinished && vFinished
-  mm2s_pipe.io.streamOut.ready := sdpmmModule.InputPipe.ready
-  mm2s_pipe.io.streamOut.bits.last := DontCare
+  sdpmmModule.InputPipe.valid := mm2s_pipe.io.streamOut.valid && (tState === state.SdpmmPipe)
+  mm2s_pipe.io.streamOut.ready := sdpmmModule.InputPipe.ready && (tState === state.SdpmmPipe)
 
   sdpmmModule.OutputPipe.ready := s2mm_pipe.io.streamIn.ready
   s2mm_pipe.io.streamIn.valid := sdpmmModule.OutputPipe.valid
   s2mm_pipe.io.streamIn.bits.data := sdpmmModule.OutputPipe.bits.asUInt
-  s2mm_pipe.io.streamIn.bits.last := sdpmmModule.OutputPipe.bits.asUInt.asBools.last
+
+  s2mm_pipe.io.streamIn.bits.last := lastReg
 
   io.done := readReqIssuedReg && writeReqIssuedReg && !mm2s_pipe.io.busy && !s2mm_pipe.io.busy &&
     kReadReqIssuedReg && kWriteReqIssuedReg && !mm2s_k.io.busy && !s2mm_k.io.busy && vReadReqIssuedReg &&
-    vWriteReqIssuedReg && !mm2s_v.io.busy && !s2mm_v.io.busy
+    vWriteReqIssuedReg && !mm2s_v.io.busy && !s2mm_v.io.busy && state.SdpmmPipe === tState
+
+  debugLog(
+    p"=========\n tState  = ${tState}, kvDataValid = ${kvDataValid}, kvDataReady = ${kvDataReady}\n==========\n"
+  )
+
+  // the last flag should go with the last valid
+  kvLineLastReg := Mux(outCnt.value >= (SdpmmConfigs.L - 1).U, true.B, false.B)
+  val inputNumTimes = RegInit(0.U(32.W))
+  inputNumTimes := io.dataIF.inputNumTimes
+  val inputCnt = common.counter(inputNumTimes + 1.U, sdpmmModule.OutputPipe.fire)
+  lastReg := Mux(inputCnt >= inputNumTimes - 1.U, true.B, false.B)
+
+  switch(tState) {
+    is(state.kvIdle) {
+      debugLog(p"state.kvIdle\n")
+      when(mm2s_k.io.streamOut.valid && mm2s_v.io.streamOut.valid && kvCnt.value < SdpmmConfigs.L.U) {
+        debugLog(p"go to kvDataRead\n")
+        tState := state.kvDataRead
+        kvDataReady := false.B
+      }
+
+      when(outCnt.value === SdpmmConfigs.L.U) {
+        debugLog(p"go to SdpmmPipe\n")
+        // kvLineLastReg := true.B
+        tState := state.SdpmmPipe
+      }
+    }
+
+    is(state.kvDataRead) {
+      debugLog(p"state.kvDataRead\n")
+      debugLog(p"The KLine is: ${kLine},\n The VLine is: ${vLine}\n")
+      // debugLog(p"The KIntReg is: ${kIntReg},\n The VIntReg is: ${vIntReg}\n")
+      kIntReg := (kLine + (kIntReg.asUInt << common.DATA_WIDTH)).asTypeOf(kIntReg)
+      vIntReg := (vLine + (vIntReg.asUInt << common.DATA_WIDTH)).asTypeOf(vIntReg)
+      kvCnt.inc()
+      tState := state.kvDataWrite
+    }
+
+    is(state.kvDataWrite) {
+      debugLog(p"state.kvDataWrite\n")
+      kvDataValid := true.B
+      when(kvDataValid && s2mm_k.io.streamIn.ready && s2mm_v.io.streamIn.ready) {
+        debugLog(p"Consume a kvLine Data\n")
+        kvDataValid := false.B
+        kvDataReady := true.B
+        outCnt.inc()
+        tState := state.kvIdle
+      }
+    }
+
+    // TODO: need do it as a flow
+    is(state.SdpmmPipe) {
+      // need turn to idle
+      debugLog(p"state.SdpmmPipe: \n")
+      // debugLog(p"The KIntReg is: ${kIntReg},\n The VIntReg is: ${vIntReg}\n")
+      // debug
+      debugLog(
+        p"mm2s_pipe.io.busy=${mm2s_pipe.io.busy} s2mm_pipe.io.busy=${s2mm_pipe.io.busy} " +
+          p"kReadReqIssuedReg=${kReadReqIssuedReg} kWriteReqIssuedReg=${kWriteReqIssuedReg} " +
+          p"mm2s_k.io.busy=${mm2s_k.io.busy} s2mm_k.io.busy=${s2mm_k.io.busy} " +
+          p"vReadReqIssuedReg=${vReadReqIssuedReg} vWriteReqIssuedReg=${vWriteReqIssuedReg} " +
+          p"mm2s_v.io.busy=${mm2s_v.io.busy} s2mm_v.io.busy=${s2mm_v.io.busy}\n"
+      )
+
+      debugLog(p"The SdpmmOutput.Valid is ${sdpmmModule.OutputPipe.valid}\n")
+
+      when(inputCnt >= inputNumTimes) {
+        debugLog(p"Finish the SdpmmPipe\n")
+        tState := state.kvIdle
+      }
+
+    }
+  }
+
 }

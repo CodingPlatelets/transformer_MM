@@ -196,13 +196,15 @@ class MM2S(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLo
     }
 
     is(sFlush) {
-      //debugLog("sFlush\n")
+      debugLog("sFlush\n")
+      debugLog(p"the issuedLen_reg is ${issuedLen_reg} and len_reg is ${len_reg}\n")
       // 等待 buffer 中数据读取完
       when(issuedLen_reg === len_reg) {
         state_reg := sEmpty
       }
     }
     is(sEmpty) {
+      debugLog(p"sEmpty\n")
       buffer_module.io.deq.ready := true.B
       when(buffer_module.io.count === 0.U) {
         state_reg := sIdle

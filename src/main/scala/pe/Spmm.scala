@@ -3,13 +3,15 @@ package pe
 import chisel3._
 import chisel3.util._
 import pe.utils._
+import vitiskernel.util.DebugLog
 
 // spmm using NumDotVec via stream data input
 // using mask to choose the needed nums
 // to find one's position, using n - n & (n-1) and than one hot to int
 // a row of a L x L matrix with mask select the needed nums will dot the specific row of the V matrix selected by the same mask
 class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numOfMask: Int, val queueSize: Int = 10)
-    extends Module {
+    extends Module
+    with DebugLog {
 
   val vMatrix = IO(Input(Vec(L, Vec(dimV, UInt(bit.W)))))
 
@@ -17,7 +19,7 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
   val OutputPipe = IO(Decoupled(new PipeValue(UInt(bit.W), dimV, numOfMask)))
 
   val InputQueue = Module(
-    new Queue(new PipeValue(UInt(bit.W), L, numOfMask), queueSize, pipe = true, flow = false, useSyncReadMem = false)
+    new Queue(new PipeValue(UInt(bit.W), L, numOfMask), queueSize, pipe = false, flow = false, useSyncReadMem = false)
   )
 
   InputQueue.io.enq <> InputPipe
@@ -49,14 +51,17 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
   val dataValid = WireInit(InputQueue.io.deq.valid)
 
   val (cnt, warp) = Counter(0 until numOfMask, busy & (!resValid) & (!finishedButNoAccepted))
-  // printf("current cnt is %d\n", cnt)
-  // printf("current tempRegVec(0) is %d\n", tempRegVec(0))
-  // printf("current pes.io.outReg is %d\n", pes(0).io.outReg)
-  // printf("current pes.io.inTop is %d\n", pes(0).io.inTop)
-  // printf("current pes.io.inLeft is %d\n", pes(0).io.inLeft)
-  // printf("current pes.io.inReg is %d\n", pes(0).io.inReg)
-  // printf("current inQueue Count is %d\n", numsQueue.io.count)
-  // printf("\n")
+
+  debugLog(
+    p"Spmm:\n" +
+      p"current cnt is ${cnt}" +
+      p"current tempRegVec(0) is ${tempRegVec(0)} " +
+      p"current pes.io.outReg is ${pes(0).io.outReg} " +
+      p"current pes.io.inTop is  ${pes(0).io.inTop} " +
+      p"current pes.io.inLeft is ${pes(0).io.inLeft} " +
+      p"current pes.io.inReg is  ${pes(0).io.inReg} " +
+      p"current inQueue Count is ${InputQueue.io.count}\n"
+  )
 
   when(busy) {
     when(!warp && !finishedButNoAccepted) {

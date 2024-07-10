@@ -38,6 +38,8 @@ XCLBIN_BUILD_DIR = ./build/xclbin
 EMU_DIR = hw_emu
 HW_DIR = hw
 
+XBUTIL = xbutil
+
 HW_XCLBIN_TEMP_DIR = $(XCLBIN_BUILD_DIR)/$(HW_DIR)/tmp
 HW_XCLBIN_LOG_DIR = $(XCLBIN_BUILD_DIR)/$(HW_DIR)/log
 HW_XCLBIN_REPORT_DIR = $(XCLBIN_BUILD_DIR)/$(HW_DIR)/report
@@ -53,6 +55,9 @@ LINK_CFG = ./xo_kernel/$(XO).cfg
 HW_XCLBIN = $(XCLBIN_BUILD_DIR)/hw/$(XO).xclbin
 
 EMU_XCLBIN = $(XCLBIN_BUILD_DIR)/hw_emu/$(XO).xclbin
+
+reset_device:
+	$(XBUTIL) reset --device 0000:3d:00.1
 
 hw_emu_xclbin: $(KERNEL_XO) $(LINK_CFG)
 	mkdir -p $(EMU_XCLBIN_TEMP_DIR)
