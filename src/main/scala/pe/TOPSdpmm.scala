@@ -44,7 +44,7 @@ class TOPSdpmm extends Module with DebugLog {
   when(s2mm_k.io.req.ready) {
     kWriteReqIssuedReg := true.B
   }
-  val kLine = Reg(UInt(common.DATA_WIDTH.W))
+  val kLine = RegInit(0.U(common.DATA_WIDTH.W))
 
   // size: 2MB
   // val kIntReg = RegInit(0.U((SdpmmConfigs.L * common.DATA_WIDTH).W))
@@ -73,7 +73,7 @@ class TOPSdpmm extends Module with DebugLog {
   when(s2mm_v.io.req.ready) {
     vWriteReqIssuedReg := true.B
   }
-  val vLine = Reg(UInt(common.DATA_WIDTH.W))
+  val vLine = RegInit(0.U(common.DATA_WIDTH.W))
   // size: 2MB
   // val vIntReg = RegInit(0.U((SdpmmConfigs.L * common.DATA_WIDTH).W))
   val vIntReg = RegInit(VecInit(Seq.fill(SdpmmConfigs.L)(VecInit(Seq.fill(SdpmmConfigs.dim)(0.U(16.W))))))
@@ -127,9 +127,6 @@ class TOPSdpmm extends Module with DebugLog {
     writeReqIssuedReg := true.B
   }
 
-  // s2mm_pipe.io.streamIn.valid := mm2s_pipe.io.streamOut.valid
-  // mm2s_pipe.io.streamOut.ready := s2mm_pipe.io.streamIn.ready
-
   // 32 * 16 + 32 * maskType(16) = 1024
   val inPipeData = Wire(new PipeValue(UInt(SdpmmConfigs.bit.W), SdpmmConfigs.dim, SdpmmConfigs.numOfMask))
 
@@ -149,9 +146,11 @@ class TOPSdpmm extends Module with DebugLog {
 
   s2mm_pipe.io.streamIn.bits.last := lastReg
 
+  val allStreamFinished = RegInit(false.B)
+
   io.done := readReqIssuedReg && writeReqIssuedReg && !mm2s_pipe.io.busy && !s2mm_pipe.io.busy &&
     kReadReqIssuedReg && kWriteReqIssuedReg && !mm2s_k.io.busy && !s2mm_k.io.busy && vReadReqIssuedReg &&
-    vWriteReqIssuedReg && !mm2s_v.io.busy && !s2mm_v.io.busy && state.SdpmmPipe === tState
+    vWriteReqIssuedReg && !mm2s_v.io.busy && !s2mm_v.io.busy && allStreamFinished
 
   debugLog(
     p"=========\n tState  = ${tState}, kvDataValid = ${kvDataValid}, kvDataReady = ${kvDataReady}\n==========\n"
@@ -173,7 +172,7 @@ class TOPSdpmm extends Module with DebugLog {
         kvDataReady := false.B
       }
 
-      when(outCnt.value === SdpmmConfigs.L.U) {
+      when(outCnt.value === SdpmmConfigs.L.U && inputCnt < inputNumTimes) {
         debugLog(p"go to SdpmmPipe\n")
         // kvLineLastReg := true.B
         tState := state.SdpmmPipe
@@ -221,6 +220,7 @@ class TOPSdpmm extends Module with DebugLog {
       when(inputCnt >= inputNumTimes) {
         debugLog(p"Finish the SdpmmPipe\n")
         tState := state.kvIdle
+        allStreamFinished := true.B
       }
 
     }

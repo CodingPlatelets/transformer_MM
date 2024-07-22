@@ -124,6 +124,9 @@ run_emu: host $(HOST_EXECUTABLE)
 run_hw: host $(HOST_EXECUTABLE)
 	$(HOST_EXECUTABLE) ./xo_kernel/hw/$(XCLBIN).xclbin
 
+kill_xsim:
+	ps aux | grep xsim | awk '{print $$2}' | xargs kill -9
+
 DEV_XVC_PUB := /dev/xvc_pub.u0
 hw_debug:
 	xvc_pcie -d $(DEV_XVC_PUB)
