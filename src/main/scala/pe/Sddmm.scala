@@ -44,8 +44,8 @@ class Sddmm(bit: Int = 16, D: Int = 32, val L: Int = 32, val numOfMask: Int = 4,
   // val tempK = RegInit(VecInit(Seq.fill(L)(VecInit(Seq.fill(D)(0.U(bit.W))))))
   // tempK := kMatrix
 
-//  val dataValid = WireInit(inMaskQueue.io.deq.valid && qVecQueue.io.deq.valid)
-  val dataValid = WireInit(InputQueue.io.deq.valid)
+//  val dataValid = WireDefault(inMaskQueue.io.deq.valid && qVecQueue.io.deq.valid)
+  val dataValid = WireDefault(InputQueue.io.deq.valid)
 
   val tempQ = RegInit(VecInit(Seq.fill(D)(0.U(bit.W))))
   val tempMask = RegInit(VecInit(Seq.fill(numOfMask)(0.U(common.maskType.W))))

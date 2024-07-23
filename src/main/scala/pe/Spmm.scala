@@ -48,7 +48,7 @@ class SpMM(bit: Int = 8, dimV: Int = 32, val L: Int = 32, alu: Int = 1, val numO
   OutputPipe.valid := resValid
   val finishedButNoAccepted = RegInit(false.B)
 
-  val dataValid = WireInit(InputQueue.io.deq.valid)
+  val dataValid = WireDefault(InputQueue.io.deq.valid)
 
   val (cnt, warp) = Counter(0 until numOfMask, busy & (!resValid) & (!finishedButNoAccepted))
 

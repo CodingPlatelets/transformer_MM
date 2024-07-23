@@ -6,6 +6,7 @@ import configs.SdpmmConfigs
 import vitiskernel.util.DebugLog
 import fixedpoint._
 import pe.utils.PipeValue
+import pe.utils.common
 
 class Softmax extends Module with DebugLog {
 
@@ -13,6 +14,7 @@ class Softmax extends Module with DebugLog {
     Flipped(Decoupled(new PipeValue(UInt(SdpmmConfigs.bit.W), SdpmmConfigs.dim, SdpmmConfigs.numOfMask)))
   )
   val OutputPipe = IO(Decoupled(new PipeValue(UInt(SdpmmConfigs.bit.W), SdpmmConfigs.dim, SdpmmConfigs.numOfMask)))
+  OutputPipe := DontCare
 
   val InputQueue = Module(
     new Queue(
@@ -24,40 +26,83 @@ class Softmax extends Module with DebugLog {
     )
   )
 
-}
+  InputQueue.io.enq <> InputPipe
 
-class CORDICExp(val bit: Int, val iter: Int) extends Module {
-  val io = IO(new Bundle {
-    val x = Input(SInt(bit.W))
-    val exp_x = Output(SInt(bit.W))
-  })
+  val ready = RegInit(true.B)
+  InputQueue.io.deq.ready := ready
+  val valid = RegInit(false.B)
+  OutputPipe.valid := valid
+  val expALUs =
+    for (i <- 0 until SdpmmConfigs.dim) yield Module(new FixedPointExp(SdpmmConfigs.bit + 1, SdpmmConfigs.bit))
+  val numsOri = RegInit(VecInit(Seq.fill(SdpmmConfigs.dim)(0.S((SdpmmConfigs.bit + 1).W))))
+  val numsExp = RegInit(VecInit(Seq.fill(SdpmmConfigs.dim)(0.S((SdpmmConfigs.bit + 1).W))))
+  val tempMasks = RegInit(VecInit(Seq.fill(SdpmmConfigs.numOfMask)(0.U(common.maskType.W))))
+  OutputPipe.bits.mask := tempMasks
 
-  // CORDIC constants for exponential calculation
-  // val K = (1.64676025812107).S(32.W) // Approximate CORDIC gain for exp
-  val K = (1.64676025812107 * (1 << 16)).toInt.S(bit.W) // Convert to fixed-point and then to SInt
-  val one = (1 << 20).S(bit.W) // 1 represented in fixed point, adjust as needed
+  //todo: sub  max
+  numsOri := InputQueue.io.deq.bits.value.map(x => x.zext)
 
-  // Registers initialization
-  val x = RegInit(io.x)
-  val y = RegInit(one) // Start with 1.0 in fixed point
-  val z = RegInit(0.S(bit.W))
-  val counter = RegInit(0.U(log2Ceil(iter).W))
-
-  // CORDIC iteration for exponential calculation
-  when(counter < iter.U) {
-    val d = Mux(z < 0.S, -1.S, 1.S)
-    x := x // x remains unchanged in exponential CORDIC
-    y := y + (d * y) >> counter // Update y based on z's sign
-    z := z - (d * (K >> counter)) // Update z based on iteration
-
-    counter := counter + 1.U
+  // each expALU.io.x is each element of numsOri
+  for (i <- 0 until SdpmmConfigs.dim) {
+    expALUs(i).io.x := numsOri(i)
   }
 
-  // Output the result
-  io.exp_x := y // The exponential result is in y
+  numsExp := expALUs.map(x => x.io.exp_x)
 
-  // Debugging information
-  printf(p"x: ${x}, y: ${y}, z: ${z}, counter: ${counter}\n")
+  val sumExp = RegInit(0.S((SdpmmConfigs.bit + 1).W))
+
+  object State extends ChiselEnum {
+    val sIdle, sMax, sExp, sSum, sDiv = Value
+  }
+
+  val state = RegInit(State.sIdle)
+
+  debugLog(
+    p"state: ${state}\n" +
+      p"numOri: ${numsOri}\n" +
+      p"numExp: ${numsExp}\n" +
+      p"sumExp: ${sumExp}\n" +
+      p"valid: ${valid}\n" +
+      p"ready: ${ready}\n" +
+      p"mask: ${tempMasks}\n" +
+      p"\n"
+  )
+
+  switch(state) {
+    is(State.sIdle) {
+      when(InputQueue.io.deq.valid) {
+        ready := false.B
+        tempMasks := InputQueue.io.deq.bits.mask
+        state := State.sMax
+      }
+    }
+    is(State.sMax) {
+      numsOri := numsOri.map(_ -& numsOri.reduceTree((a, b) => Mux(a > b, a, b)))
+      state := State.sExp
+    }
+    is(State.sExp) {
+      for (i <- 0 until SdpmmConfigs.dim) {
+        expALUs(i).io.x := numsOri(i)
+      }
+      state := State.sSum
+    }
+
+    is(State.sSum) {
+      sumExp := numsExp.reduceTree(_ +& _)
+      state := State.sDiv
+    }
+    is(State.sDiv) {
+      val exps = WireDefault(VecInit(numsExp.map(_ / sumExp).map(x => x.tail(SdpmmConfigs.bit))))
+      OutputPipe.bits.value := exps
+      valid := true.B
+      when(valid && OutputPipe.ready) {
+        ready := true.B
+        valid := false.B
+        state := State.sIdle
+      }
+    }
+  }
+
 }
 
 class FixedPointExp(val wholeWidth: Int, val fractionalWidth: Int) extends Module with DebugLog {
