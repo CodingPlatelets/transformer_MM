@@ -14,8 +14,8 @@ class CORDICTest extends AnyFlatSpec with ChiselScalatestTester {
 //   val dimV = 32
 //   val depth = 128
   val annos = Seq(VerilatorBackendAnnotation)
-  val wholeWidth:      Int = 16
-  val fractionalWidth: Int = 15
+  val wholeWidth:      Int = 32
+  val fractionalWidth: Int = 16
   val pow2 = scala.math.pow(2, fractionalWidth)
   behavior.of("tester on exp function in chisel")
   it should "exp in fixedpoint" in {
@@ -25,9 +25,9 @@ class CORDICTest extends AnyFlatSpec with ChiselScalatestTester {
         dut.clock.step()
         dut.reset.poke(false.B)
         dut.clock.step()
-        val start_val = -0.5
+        val start_val = -5.5
         val end_val = 0.5
-        val num = 500
+        val num = 1000
         val writer = new PrintWriter(new File("test_results.csv"))
 
         writer.write("Input Value,Computed Exp,Actual Exp,Relative Error (%)\n")
@@ -67,6 +67,7 @@ class CORDICTest extends AnyFlatSpec with ChiselScalatestTester {
           val exp = scala.math.exp(testQ(i))
           exp / (testQ.map(x => scala.math.exp(x)).sum)
         }
+        println(testQ)
         println(mask)
         val writer = new PrintWriter(new File("softmax_test_results.csv"))
 

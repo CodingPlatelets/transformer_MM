@@ -26,6 +26,7 @@ class Softmax extends Module with DebugLog {
     )
   )
 
+  InputQueue.io.deq := DontCare
   InputQueue.io.enq <> InputPipe
 
   val ready = RegInit(true.B)
@@ -40,14 +41,11 @@ class Softmax extends Module with DebugLog {
   OutputPipe.bits.mask := tempMasks
 
   //todo: sub  max
-  numsOri := InputQueue.io.deq.bits.value.map(x => x.zext)
 
   // each expALU.io.x is each element of numsOri
   for (i <- 0 until SdpmmConfigs.dim) {
     expALUs(i).io.x := numsOri(i)
   }
-
-  numsExp := expALUs.map(x => x.io.exp_x)
 
   val sumExp = RegInit(0.S((SdpmmConfigs.bit + 1).W))
 
@@ -56,10 +54,12 @@ class Softmax extends Module with DebugLog {
   }
 
   val state = RegInit(State.sIdle)
+  val max = numsOri.reduceTree((a, b) => Mux(a > b, a, b))
 
   debugLog(
     p"state: ${state}\n" +
       p"numOri: ${numsOri}\n" +
+      p"max: ${max}\n" +
       p"numExp: ${numsExp}\n" +
       p"sumExp: ${sumExp}\n" +
       p"valid: ${valid}\n" +
@@ -73,17 +73,21 @@ class Softmax extends Module with DebugLog {
       when(InputQueue.io.deq.valid) {
         ready := false.B
         tempMasks := InputQueue.io.deq.bits.mask
+        numsOri := InputQueue.io.deq.bits.value.map(x => x.zext)
         state := State.sMax
       }
     }
     is(State.sMax) {
-      numsOri := numsOri.map(_ -& numsOri.reduceTree((a, b) => Mux(a > b, a, b)))
+      numsOri := numsOri.map(_ -& max)
       state := State.sExp
     }
+
     is(State.sExp) {
-      for (i <- 0 until SdpmmConfigs.dim) {
-        expALUs(i).io.x := numsOri(i)
+      expALUs.zip(numsOri).foreach {
+        case (expALU, numOri) =>
+          expALU.io.x := numOri
       }
+      numsExp := expALUs.map(x => x.io.exp_x)
       state := State.sSum
     }
 
@@ -91,8 +95,9 @@ class Softmax extends Module with DebugLog {
       sumExp := numsExp.reduceTree(_ +& _)
       state := State.sDiv
     }
+
     is(State.sDiv) {
-      val exps = WireDefault(VecInit(numsExp.map(_ / sumExp).map(x => x.tail(SdpmmConfigs.bit))))
+      val exps = WireDefault(VecInit(numsExp.map(_ / sumExp).map(x => x(SdpmmConfigs.bit - 1, 0).asUInt)))
       OutputPipe.bits.value := exps
       valid := true.B
       when(valid && OutputPipe.ready) {
@@ -115,13 +120,13 @@ class FixedPointExp(val wholeWidth: Int, val fractionalWidth: Int) extends Modul
   val z = Wire(SInt(((wholeWidth).W)))
   val p = Wire(FixedPoint((wholeWidth).W, fractionalWidth.BP))
   val lp = Wire(FixedPoint((wholeWidth).W, fractionalWidth.BP))
-  val log2 = WireDefault(0.6931471805599453.F(fractionalWidth.BP))
+  val ln2 = WireDefault(0.6931471805599453.F(fractionalWidth.BP))
   val bias1 = WireDefault(1.353.F(fractionalWidth.BP))
   val k1 = WireDefault(0.3585.F(fractionalWidth.BP))
   val bias2 = WireDefault(0.344.F(fractionalWidth.BP))
 
-  z := io.x / log2.asSInt
-  p := io.x.asFixedPoint(fractionalWidth.BP) + z.asFixedPoint(fractionalWidth.BP) * log2
+  z := io.x / ln2.asSInt
+  p := io.x.asFixedPoint(fractionalWidth.BP) + z.asFixedPoint(fractionalWidth.BP) * ln2
   lp := k1 * (p + bias1) * (p + bias1) + bias2
   io.exp_x := (lp >> z.asUInt).asSInt
 }
