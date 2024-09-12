@@ -30,5 +30,5 @@ object common {
   val maskType = 16
   val DATA_WIDTH = 512
   val PIPE_DATA_WIDTH = 1024
-
+  val valueType = UInt(16.W)
 }
