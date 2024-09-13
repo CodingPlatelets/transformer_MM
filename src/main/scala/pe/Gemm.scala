@@ -6,11 +6,38 @@ import vitiskernel.util.DebugLog
 // Compute A * B, where A and B are both square matrix.
 class GEMM(val n: Int = 4, val bits: Int = 8) extends Module with DebugLog {
 
-  val InputXPipe = IO(Flipped(Decoupled(Vec(n * n, UInt(bits.W)))))
-  val InputYPipe = IO(Flipped(Decoupled(Vec(n * n, UInt(bits.W)))))
+  val InputX = IO(Input(Vec(n * n, UInt(bits.W))))
+  val Weight = IO(Input(Vec(n * n, UInt(bits.W))))
   val OutputPipe = IO(Decoupled(Vec(n * n, UInt((bits * 2).W))))
 
+  def getIdx(x: Int, y: Int): Int = x * n + y
+  def getIdy(x: Int, y: Int): Int = x * (2 * n - 1) + y
+
   val sysmm = Module(new SystolicMM(this.n, this.bits))
+
+  val x_wires = WireDefault(VecInit(Seq.fill((2 * n - 1) * n)(0.U(bits.W))))
+  val y_wires = WireDefault(VecInit(Seq.fill((2 * n - 1) * n)(0.U(bits.W))))
+
+  for (i <- 0 until n) {
+    for (j <- i until i + n) {
+      y_wires(getIdy(i, j)) := Weight(getIdx(i, j - i))
+    }
+  }
+
+  for (j <- 0 until n) {
+    for (i <- j until j + n) {
+      x_wires(getIdx(i, j)) := InputX(getIdx(i - j, j))
+    }
+  }
+
+  val cnt = Counter(3 * n - 2)
+  when(cnt.value < (3 * n - 2).U) {
+    for (i <- 0 until n) {
+      sysmm.io.in_a(i) := x_wires(cnt.value * n.U + i.U)
+      // TODO: check if this is correct, the y index is not right
+      sysmm.io.in_b(i) := y_wires(((i + 1) * (2 * n - 2)).U - cnt.value)
+    }
+  }
 
 }
 
