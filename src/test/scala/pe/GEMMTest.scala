@@ -13,6 +13,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
+  // n * n
   def matInit(n: Int): Array[Array[Int]] = {
     val rseed = 100
     val maxval = 5
@@ -26,7 +27,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     println()
   }
 
-  private def testGEMM(dut: GEMM): Unit = {
+  private def testGEMM(dut: SystolicMM): Unit = {
     val n = dut.n
     val a = matInit(n)
     val b = a
@@ -56,7 +57,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.io.in_b(idx).poke(0)
         }
       }
-      dut.clock.step(1)
+      dut.clock.step()
       print(f"$clk: ")
       checkresult()
     }
@@ -75,6 +76,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     if (invalidcnt == 0) println("Verification passed!")
     dut.clock.step(3)
   }
+
   private def testProcElem(dut: ProcElem): Unit = {
     require(dut.bits > 4)
 
@@ -102,7 +104,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new ProcElem()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testProcElem)
   }
 
-  "SMatMul basic test on Verilator" should "pass" in {
-    test(new GEMM()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
+  "GEMM basic test on Verilator" should "pass" in {
+    test(new SystolicMM()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
   }
 }

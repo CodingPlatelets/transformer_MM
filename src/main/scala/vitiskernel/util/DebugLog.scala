@@ -10,7 +10,7 @@ trait DebugLog {
     val ERROR = 1
     val QUIET = 0
   }
-  var logLevel = LogLevel.DEBUG
+  var logLevel = LogLevel.ERROR
   def debugLog(p: Printable) = {
     if (logLevel >= LogLevel.DEBUG) {
       printf(p)

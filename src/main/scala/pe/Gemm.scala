@@ -1,9 +1,20 @@
 package pe
 import chisel3._
 import chisel3.util._
+import vitiskernel.util.DebugLog
 
 // Compute A * B, where A and B are both square matrix.
-class GEMM(val n: Int = 4, val bits: Int = 8) extends Module {
+class GEMM(val n: Int = 4, val bits: Int = 8) extends Module with DebugLog {
+
+  val InputXPipe = IO(Flipped(Decoupled(Vec(n * n, UInt(bits.W)))))
+  val InputYPipe = IO(Flipped(Decoupled(Vec(n * n, UInt(bits.W)))))
+  val OutputPipe = IO(Decoupled(Vec(n * n, UInt((bits * 2).W))))
+
+  val sysmm = Module(new SystolicMM(this.n, this.bits))
+
+}
+
+class SystolicMM(val n: Int = 4, val bits: Int = 8) extends Module {
   val io = IO(new Bundle {
     val in_a = Input(Vec(n, UInt(bits.W))) // horizontal inputs
     val in_b = Input(Vec(n, UInt(bits.W))) // vertical inputs
@@ -25,15 +36,26 @@ class GEMM(val n: Int = 4, val bits: Int = 8) extends Module {
 
       // wiring up PEs
       // horizontal inputs
-      if (col == 0) p_elems(pidx).in_h := io.in_a(row)
-      else p_elems(pidx).in_h := h_wires(gethidx(row, col - 1))
+      if (col == 0) {
+        p_elems(pidx).in_h := io.in_a(row)
+      } else {
+        p_elems(pidx).in_h := h_wires(gethidx(row, col - 1))
+      }
       // horizontal outputs to next PEs
-      if (col < n - 1) h_wires(gethidx(row, col)) := p_elems(pidx).out_h
+      if (col < n - 1) {
+        h_wires(gethidx(row, col)) := p_elems(pidx).out_h
+      }
+
       // vertical inputs
-      if (row == 0) p_elems(pidx).in_v := io.in_b(col)
-      else p_elems(pidx).in_v := v_wires(getvidx(row - 1, col))
+      if (row == 0) {
+        p_elems(pidx).in_v := io.in_b(col)
+      } else {
+        p_elems(pidx).in_v := v_wires(getvidx(row - 1, col))
+      }
       // vertical outputs to next PEs
-      if (row < n - 1) v_wires(getvidx(row, col)) := p_elems(pidx).out_v
+      if (row < n - 1) {
+        v_wires(getvidx(row, col)) := p_elems(pidx).out_v
+      }
     }
   }
 }
