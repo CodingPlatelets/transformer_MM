@@ -6,42 +6,63 @@ import vitiskernel.util.DebugLog
 // Compute A * B, where A and B are both square matrix.
 class GEMM(val n: Int = 4, val bits: Int = 8) extends Module with DebugLog {
 
-  val InputX = IO(Input(Vec(n * n, UInt(bits.W))))
-  val Weight = IO(Input(Vec(n * n, UInt(bits.W))))
+  val InputB = IO(Input(Vec(n * n, UInt(bits.W))))
+  val InputA = IO(Input(Vec(n * n, UInt(bits.W))))
+  val DataReady = IO(Input(Bool()))
   val OutputPipe = IO(Decoupled(Vec(n * n, UInt((bits * 2).W))))
 
   def getIdx(x: Int, y: Int): Int = x * n + y
   def getIdy(x: Int, y: Int): Int = x * (2 * n - 1) + y
 
   val sysmm = Module(new SystolicMM(this.n, this.bits))
+  sysmm.io := DontCare
+  val resValid = RegInit(false.B)
+  OutputPipe.valid := resValid
+  OutputPipe.bits := sysmm.io.out
 
   val x_wires = WireDefault(VecInit(Seq.fill((2 * n - 1) * n)(0.U(bits.W))))
   val y_wires = WireDefault(VecInit(Seq.fill((2 * n - 1) * n)(0.U(bits.W))))
 
   for (i <- 0 until n) {
     for (j <- i until i + n) {
-      y_wires(getIdy(i, j)) := Weight(getIdx(i, j - i))
+      y_wires(getIdy(i, j)) := InputA(getIdx(i, j - i))
     }
   }
 
   for (j <- 0 until n) {
     for (i <- j until j + n) {
-      x_wires(getIdx(i, j)) := InputX(getIdx(i - j, j))
+      x_wires(getIdx(i, j)) := InputB(getIdx(i - j, j))
     }
   }
 
-  val cnt = Counter(3 * n - 2)
-  when(cnt.value < (3 * n - 2).U) {
+  val cnt = Counter(3 * n - 1)
+  when(DataReady && cnt.value <= (2 * n - 1).U) {
     for (i <- 0 until n) {
-      sysmm.io.in_a(i) := x_wires(cnt.value * n.U + i.U)
-      // TODO: check if this is correct, the y index is not right
-      sysmm.io.in_b(i) := y_wires(((i + 1) * (2 * n - 2)).U - cnt.value)
+      sysmm.io.in_b(i) := x_wires((cnt.value * n.U + i.U)(4, 0))
+      sysmm.io.in_a(i) := y_wires((cnt.value + ((2 * n - 1) * i).U).pad(5))
+      debugLog(p"in_a${i}: ${sysmm.io.in_a(i)} in_b${i}: ${sysmm.io.in_b(i)}\t")
+    }
+    debugLog(p"\n")
+    cnt.inc()
+  }.elsewhen(DataReady && cnt.value < (3 * n - 2).U) {
+    for (i <- 0 until n) {
+      sysmm.io.in_b(i) := 0.U
+      sysmm.io.in_a(i) := 0.U
+    }
+    cnt.inc()
+  }
+
+  when(cnt.value === (3 * n - 2).U) {
+    resValid := true.B
+    when(OutputPipe.ready) {
+      resValid := false.B
+      cnt.reset()
     }
   }
 
 }
 
-class SystolicMM(val n: Int = 4, val bits: Int = 8) extends Module {
+class SystolicMM(val n: Int = 4, val bits: Int = 8) extends Module with DebugLog {
   val io = IO(new Bundle {
     val in_a = Input(Vec(n, UInt(bits.W))) // horizontal inputs
     val in_b = Input(Vec(n, UInt(bits.W))) // vertical inputs
@@ -56,6 +77,7 @@ class SystolicMM(val n: Int = 4, val bits: Int = 8) extends Module {
   def getvidx(r: Int, c: Int): Int = r * n + c
 
   // connecting PEs in a systolic manner
+  debugLog(p"pe(2,0): ${p_elems(8).in_h}, ${p_elems(8).in_v}, ${p_elems(8).out}\n")
   for (col <- 0 until n) {
     for (row <- 0 until n) {
       val pidx = row * n + col

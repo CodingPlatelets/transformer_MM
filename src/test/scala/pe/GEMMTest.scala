@@ -5,7 +5,6 @@ import chiseltest._
 import org.scalatest.Tag
 import org.scalatest.flatspec.AnyFlatSpec
 
-
 class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
   def mmul(a: Array[Array[Int]], b: Array[Array[Int]]): Array[Array[Int]] = {
     for (r <- a) yield {
@@ -27,7 +26,46 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     println()
   }
 
-  private def testGEMM(dut: SystolicMM): Unit = {
+  private def testGEMM(dut: GEMM) = {
+    val n = dut.n
+    val a = matInit(n)
+    val b = a
+    val y = mmul(a, b)
+
+    printmat(a)
+    printmat(y)
+
+    for (i <- 0 until n) {
+      for (j <- 0 until n) {
+        dut.InputB(i * n + j).poke(a(i)(j))
+        dut.InputA(i * n + j).poke(b(i)(j))
+      }
+    }
+    dut.DataReady.poke(true.B)
+
+    dut.clock.step(3 * n - 1)
+
+    dut.OutputPipe.valid.expect(true.B)
+    def checkresult(): List[Int] = {
+      val ret = for (j <- 0 until n * n) yield {
+        val out = dut.OutputPipe.bits(j).peekInt()
+        print(out.toString + " ")
+        out.toInt // litValue returns BigInt
+      }
+      println()
+      ret.toList
+    }
+
+    val out = checkresult()
+
+    for (i <- out.zip(y.flatten.toList)) {
+      if (i._1 != i._2) {
+        println("Error: " + i._1 + " " + i._2)
+      }
+    }
+  }
+
+  private def testSystolicMM(dut: SystolicMM): Unit = {
     val n = dut.n
     val a = matInit(n)
     val b = a
@@ -104,7 +142,11 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new ProcElem()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testProcElem)
   }
 
-  "GEMM basic test on Verilator" should "pass" in {
-    test(new SystolicMM()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
+  "SystolicMM basic test on Verilator" should "pass" in {
+    test(new SystolicMM()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+  }
+
+  "GeMM basic test on Verilator" should "pass" in {
+    test(new GEMM()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
   }
 }
