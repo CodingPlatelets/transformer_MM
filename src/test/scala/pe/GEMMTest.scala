@@ -14,7 +14,8 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
 
   // n * n
   def matInit(n: Int): Array[Array[Int]] = {
-    val rseed = 100
+    val rseed = System.currentTimeMillis().toInt
+    // val rseed = 200
     val maxval = 5
     val rnd = new scala.util.Random(rseed)
 
@@ -29,21 +30,21 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
   private def testGEMM(dut: GEMM) = {
     val n = dut.n
     val a = matInit(n)
-    val b = a
+    val b = matInit(n)
     val y = mmul(a, b)
-
     printmat(a)
+    printmat(b)
     printmat(y)
 
     for (i <- 0 until n) {
       for (j <- 0 until n) {
-        dut.InputB(i * n + j).poke(a(i)(j))
-        dut.InputA(i * n + j).poke(b(i)(j))
+        dut.InputA(i)(j).poke(a(i)(j))
+        dut.InputB(i)(j).poke(b(i)(j))
       }
     }
     dut.DataReady.poke(true.B)
 
-    dut.clock.step(3 * n - 1)
+    dut.clock.step(3 * n)
 
     dut.OutputPipe.valid.expect(true.B)
     def checkresult(): List[Int] = {
@@ -57,21 +58,26 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     }
 
     val out = checkresult()
+    var invalidcnt = 0
 
     for (i <- out.zip(y.flatten.toList)) {
       if (i._1 != i._2) {
         println("Error: " + i._1 + " " + i._2)
+        invalidcnt += 1
       }
     }
+    if (invalidcnt == 0) println("GEMM Verification passed!")
+    assert(invalidcnt == 0)
   }
 
   private def testSystolicMM(dut: SystolicMM): Unit = {
     val n = dut.n
     val a = matInit(n)
-    val b = a
+    val b = matInit(n)
     val y = mmul(a, b)
 
     printmat(a)
+    printmat(b)
     printmat(y)
 
     def checkresult(): List[Int] = {
@@ -112,6 +118,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     }
 
     if (invalidcnt == 0) println("Verification passed!")
+    assert(invalidcnt == 0)
     dut.clock.step(3)
   }
 
@@ -143,10 +150,10 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   "SystolicMM basic test on Verilator" should "pass" in {
-    test(new SystolicMM()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+    test(new SystolicMM(5, 16)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
   }
 
   "GeMM basic test on Verilator" should "pass" in {
-    test(new GEMM()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
+    test(new GEMM(6, 16)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
   }
 }
