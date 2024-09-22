@@ -823,6 +823,7 @@ module float2fxp_pipe #(
       end else begin
         if (outl[WOI+WOF-1]) begin
           out[WOI+WOF-1] <= 1'b0;
+          // missing WOI + WOF - 1?
           out[WOI+WOF-2:0] <= {(WOI + WOF) {1'b1}};
           overflow <= 1'b1;
         end

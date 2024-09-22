@@ -66,6 +66,289 @@ class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int
   io.out := Cat(outi, outf)
 }
 
+class Fxp2Float(val WII: Int = 8, val WIF: Int = 8) extends Module {
+  val io = IO(new Bundle {
+    val in = Input(UInt((WII + WIF).W))
+    val out = Output(UInt(32.W))
+  })
+
+  val ONEI = 1.U((WII + WIF).W)
+
+  val sign = io.in(WII + WIF - 1)
+  val inu = Mux(sign, (~io.in) + ONEI, io.in)
+
+  val tail = RegInit(0.U(23.W))
+  val flag = RegInit(false.B)
+  val expz = RegInit(0.S(10.W))
+  val ii = RegInit(22.S(10.W))
+
+  tail := 0.U
+  flag := false.B
+  ii := 22.S
+  expz := 0.S
+
+  for (jj <- (WII + WIF - 1) to 0 by -1) {
+    when(flag && ii >= 0.S) {
+      tail := tail.bitSet(ii.asUInt, inu(jj))
+      ii := ii - 1.S
+    }
+    when(inu(jj)) {
+      when(!flag) {
+        expz := (jj + 127 - WIF).S
+      }
+      flag := true.B
+    }
+  }
+
+  val expt = Wire(UInt(8.W))
+  when(expz < 255.S) {
+    expt := Mux(inu === 0.U, 0.U, expz(7, 0).asUInt)
+  }.otherwise {
+    expt := 254.U
+    tail := "h7FFFFF".U
+  }
+
+  io.out := Cat(sign, expt, tail)
+}
+
+class Fxp2FloatPipe(val WII: Int = 8, val WIF: Int = 8) extends Module {
+  val io = IO(new Bundle {
+    val rstn = Input(Bool())
+    val clk = Input(Clock())
+    val in = Input(UInt((WII + WIF).W))
+    val out = Output(UInt(32.W))
+  })
+
+  val ONEI = 1.U((WII + WIF).W)
+
+  val sign = Reg(Vec(WII + WIF + 1, Bool()))
+  val exp = Reg(Vec(WII + WIF + 1, SInt(10.W)))
+  val inu = Reg(Vec(WII + WIF + 1, UInt((WII + WIF).W)))
+
+  val vall = RegInit(0.U(24.W))
+  val valo = RegInit(0.U(24.W))
+  val expo = RegInit(0.U(8.W))
+  val signo = RegInit(false.B)
+
+  io.out := Cat(signo, expo, valo(22, 0))
+
+  for (ii <- 0 until WII + WIF + 1) {
+    sign(ii) := false.B
+    exp(ii) := 0.S
+    inu(ii) := 0.U
+  }
+
+  when(!io.rstn) {
+    for (ii <- 0 until WII + WIF + 1) {
+      sign(ii) := false.B
+      exp(ii) := 0.S
+      inu(ii) := 0.U
+    }
+  }.otherwise {
+    sign(WII + WIF) := io.in(WII + WIF - 1)
+    exp(WII + WIF) := (WII + 127 - 1).S
+    inu(WII + WIF) := Mux(io.in(WII + WIF - 1), (~io.in) + ONEI, io.in)
+    for (ii <- (WII + WIF - 1) to 0 by -1) {
+      sign(ii) := sign(ii + 1)
+      when(inu(ii + 1)(WII + WIF - 1)) {
+        exp(ii) := exp(ii + 1)
+        inu(ii) := inu(ii + 1)
+      }.otherwise {
+        when(exp(ii + 1) =/= 0.S) {
+          exp(ii) := exp(ii + 1) - 1.S
+        }.otherwise {
+          exp(ii) := exp(ii + 1)
+        }
+        inu(ii) := inu(ii + 1) << 1
+      }
+    }
+  }
+
+  if (23 > WII + WIF - 1) {
+    vall := 0.U
+    vall := inu(0)
+  } else {
+    vall := inu(0)(WII + WIF - 1, WII + WIF - 1 - 23)
+  }
+
+  when(!io.rstn) {
+    signo := false.B
+    expo := 0.U
+    valo := 0.U
+  }.otherwise {
+    signo := sign(0)
+    when(exp(0) >= 255.S) {
+      expo := 255.U
+      valo := "hFFFFFF".U
+    }.elsewhen(exp(0) === 0.S || !vall(23)) {
+      expo := 0.U
+      valo := 0.U
+    }.otherwise {
+      expo := exp(0)(7, 0).asUInt
+      valo := vall
+    }
+  }
+}
+
+class Float2Fxp(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module {
+  val io = IO(new Bundle {
+    val in = Input(UInt(32.W))
+    val out = Output(UInt((WOI + WOF).W))
+    val overflow = Output(Bool())
+  })
+
+  val ONEO = 1.U((WOI + WOF).W)
+
+  val sign = Reg(Bool())
+  val exp2 = Reg(UInt(8.W))
+  val valWire = Reg(UInt(24.W))
+  val expi = Reg(SInt(32.W))
+  val round = Reg(Bool())
+
+  val overflow = Wire(Bool())
+  val out = Wire(UInt((WOI + WOF).W))
+
+  round := false.B
+  overflow := false.B
+  out := 0.U
+
+  sign := io.in(31)
+  exp2 := io.in(30, 23)
+  valWire := Cat(1.U(1.W), io.in(22, 0))
+
+  expi := (exp2.zext - 127.S + WOF.S).asSInt
+
+  when(exp2.andR) {
+    overflow := true.B
+  }.elsewhen(io.in(30, 0) =/= 0.U) {
+    for (ii <- 23 to 0 by -1) {
+      when(valWire(ii)) {
+        when(expi >= (WOI + WOF - 1).S) {
+          overflow := true.B
+        }.elsewhen(expi >= 0.S) {
+          out := out.bitSet(expi.asUInt, true.B)
+        }.elsewhen(ROUND.B && expi === -1.S) {
+          round := true.B
+        }
+      }
+      expi := expi - 1.S
+    }
+    when(round) {
+      out := out + 1.U
+    }
+  }
+
+  when(overflow) {
+    when(sign) {
+      out := Cat(1.U(1.W), 0.U((WOI + WOF - 1).W))
+    }.otherwise {
+      out := Cat(0.U(1.W), Fill(WOI + WOF - 1, 1.U))
+    }
+  }.otherwise {
+    when(sign) {
+      out := (~out).asUInt + ONEO
+    }
+  }
+
+  io.out := out
+  io.overflow := overflow
+}
+
+class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module {
+  val io = IO(new Bundle {
+    val in = Input(UInt(32.W))
+    val out = Output(UInt((WOI + WOF).W))
+    val overflow = Output(Bool())
+  })
+
+  val ONEO = 1.U((WOI + WOF).W)
+
+  // Input comb
+  val sign = Wire(Bool())
+  val exp = Wire(UInt(8.W))
+  val valWire = Wire(UInt(24.W))
+
+  sign := io.in(31)
+  exp := io.in(30, 23)
+  valWire := Cat(exp.orR, io.in(22, 0))
+
+  // Pipeline stage 1
+  val signinit = RegInit(false.B)
+  val roundinit = RegInit(false.B)
+  val expinit = RegInit(0.S(32.W))
+  val outinit = RegInit(0.U((WOI + WOF).W))
+
+  if (WOI + WOF - 1 >= 23) {
+    outinit := 0.U(1.W) ## valWire ## 0.U
+    roundinit := false.B
+  } else {
+    outinit := valWire(23, 23 - (WOI + WOF - 1))
+    roundinit := (ROUND.B && valWire(23 - (WOI + WOF - 1) - 1))
+  }
+
+  signinit := sign
+  when(exp === 255.U || Cat(0.U(24.W), exp) > (WOI + 126).U) {
+    expinit := 0.S
+  }.otherwise {
+    expinit := (Cat(0.U(24.W), exp).asSInt - (WOI - 1).S - 127.S)
+  }
+
+  // Next pipeline stages
+  val signs = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(false.B)))
+  val rounds = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(false.B)))
+  val exps = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.S(32.W))))
+  val outs = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WOI + WOF).W))))
+
+  for (ii <- 0 until WOI + WOF) {
+    signs(ii) := signs(ii + 1)
+    when(exps(ii + 1) =/= 0.S) {
+      outs(ii) := outs(ii + 1) << 1
+      rounds(ii) := false.B
+      exps(ii) := exps(ii + 1) + 1.S
+    }.otherwise {
+      outs(ii) := outs(ii + 1)
+      rounds(ii) := rounds(ii + 1)
+      exps(ii) := exps(ii + 1)
+    }
+  }
+  signs(WOI + WOF) := signinit
+  rounds(WOI + WOF) := roundinit
+  exps(WOI + WOF) := expinit
+  outs(WOI + WOF) := outinit
+
+  // Last 2nd pipeline stage
+  val signl = RegInit(false.B)
+  val outl = RegInit(0.U((WOI + WOF).W))
+  val outt = Reg(UInt((WOI + WOF).W))
+
+  outt := outs(0)
+  when(ROUND.B && rounds(0) && !(outt.andR)) {
+    outt := outt + 1.U
+  }
+  when(signs(0)) {
+    signl := outt =/= 0.U
+    outt := (~outt).asUInt + ONEO
+  }.otherwise {
+    signl := false.B
+  }
+  outl := outt
+
+  // Last 1st pipeline stage: overflow control
+  io.out := outl
+  io.overflow := false.B
+  when(signl) {
+    when(!outl(WOI + WOF - 1)) {
+      io.out := Cat(1.U(1.W), 0.U((WOI + WOF - 1).W))
+      io.overflow := true.B
+    }
+  }.otherwise {
+    when(outl(WOI + WOF - 1)) {
+      io.out := Cat(0.U(1.W), Fill(WOI + WOF - 1, 1.U))
+      io.overflow := true.B
+    }
+  }
+}
+
 class FxpAddSub(
   val WIIA:  Int = 8,
   val WIFA:  Int = 8,
