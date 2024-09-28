@@ -26,7 +26,7 @@ class Float2FxpTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new Float2Fxp) { dut =>
       // 测试正数转换
       dut.io.in.poke("h3f800000".U) // 1.0f
-      dut.clock.step(3)
+      dut.clock.step(2)
       dut.io.out.expect("h0100".U)
       dut.io.overflow.expect(false.B)
 
