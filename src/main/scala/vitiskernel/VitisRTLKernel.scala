@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import _root_.circt.stage.ChiselStage
 import pe.TOPSdpmm
+import pe.utils._
 import vitiskerneldata.VitisRTLKernelDataIF
 
 class VitisRTLKernel extends RawModule {
@@ -69,8 +70,10 @@ class VitisRTLKernel extends RawModule {
 object VitisRTLKernelVerilog extends App {
 //  args.foreach(x =println(x))
   ChiselStage.emitSystemVerilogFile(
-    new VitisRTLKernel,
-    firtoolOpts = Array("-disable-all-randomization", "-strip-debug-info"),
+    // new VitisRTLKernel,
+    new Float2Fxp,
+    // firtoolOpts = Array("-disable-all-randomization", "-strip-debug-info"),
+    firtoolOpts = Array("-disable-all-randomization"),
     args = Array("--target-dir", "./build/chisel")
   )
 }

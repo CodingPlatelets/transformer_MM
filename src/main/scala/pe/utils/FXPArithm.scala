@@ -3,6 +3,7 @@ package pe.utils
 import chisel3._
 import chisel3.util._
 import coursier.core.shaded.sourcecode.Macros.Chunk.Val
+import vitiskernel.util.DebugLog
 
 class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1)
     extends Module {
@@ -111,7 +112,7 @@ class Fxp2Float(val WII: Int = 8, val WIF: Int = 8) extends Module {
   io.out := Cat(sign, expt, tail)
 }
 
-class Fxp2FloatPipe(val WII: Int = 8, val WIF: Int = 8) extends Module {
+class Fxp2FloatPipe(val WII: Int = 8, val WIF: Int = 8) extends Module with DebugLog {
   val io = IO(new Bundle {
     val rstn = Input(Bool())
     val clk = Input(Clock())
@@ -190,51 +191,44 @@ class Fxp2FloatPipe(val WII: Int = 8, val WIF: Int = 8) extends Module {
   }
 }
 
-class Float2Fxp(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module {
+class Float2Fxp(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module with DebugLog {
   val io = IO(new Bundle {
     val in = Input(UInt(32.W))
     val out = Output(UInt((WOI + WOF).W))
     val overflow = Output(Bool())
   })
-
   val ONEO = 1.U((WOI + WOF).W)
 
   val sign = Reg(Bool())
-  val exp2 = Reg(UInt(8.W))
+  val exp2 = Wire(UInt(8.W))
   val valWire = Reg(UInt(24.W))
   val expi = Reg(SInt(32.W))
   val round = Reg(Bool())
 
-  val overflow = Wire(Bool())
-  val out = Wire(UInt((WOI + WOF).W))
+  val overflow = WireDefault(false.B)
+  val out = RegInit(0.U((WOI + WOF).W))
+  debugLog(
+    p"in: ${io.in}, sign: ${sign}, valWire: ${valWire}, exp2: ${exp2}, expi: ${expi}, overflow: ${overflow}, out: ${out}\n"
+  )
 
   round := false.B
-  overflow := false.B
-  out := 0.U
-
   sign := io.in(31)
   exp2 := io.in(30, 23)
   valWire := Cat(1.U(1.W), io.in(22, 0))
 
-  expi := (exp2.zext - 127.S + WOF.S).asSInt
+  expi := exp2.zext + (WOF - 127).S
 
-  when(exp2.andR) {
-    overflow := true.B
-  }.elsewhen(io.in(30, 0) =/= 0.U) {
-    for (ii <- 23 to 0 by -1) {
-      when(valWire(ii)) {
-        when(expi >= (WOI + WOF - 1).S) {
-          overflow := true.B
-        }.elsewhen(expi >= 0.S) {
-          out := out.bitSet(expi.asUInt, true.B)
-        }.elsewhen(ROUND.B && expi === -1.S) {
-          round := true.B
-        }
-      }
-      expi := expi - 1.S
-    }
-    when(round) {
-      out := out + 1.U
+  overflow := Mux(
+    RegNext(exp2.andR)
+      || expi >= (WOI + WOF - 1).S,
+    true.B,
+    false.B
+  )
+  when(RegNext(io.in(30, 0)) =/= 0.U && !RegNext(exp2.andR) && !overflow && expi >= -1.S) {
+    round := (valWire(23, 25 - WOI - WOF) >> ((WOI + WOF).U - (expi + 1.S).asUInt)) & ROUND.B
+    out := valWire(23, 24 - WOI - WOF) >> ((WOI + WOF).U - (expi + 1.S).asUInt) + round
+    when(sign) {
+      out := (~out).asUInt + ONEO
     }
   }
 
@@ -244,17 +238,13 @@ class Float2Fxp(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends 
     }.otherwise {
       out := Cat(0.U(1.W), Fill(WOI + WOF - 1, 1.U))
     }
-  }.otherwise {
-    when(sign) {
-      out := (~out).asUInt + ONEO
-    }
   }
 
   io.out := out
-  io.overflow := overflow
+  io.overflow := RegNext(overflow)
 }
 
-class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module {
+class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module with DebugLog {
   val io = IO(new Bundle {
     val in = Input(UInt(32.W))
     val out = Output(UInt((WOI + WOF).W))
@@ -311,6 +301,7 @@ class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) exte
       exps(ii) := exps(ii + 1)
     }
   }
+  debugLog(p"signs: ${signs},\n rounds: ${rounds},\n exps: ${exps},\n outs: ${outs}.\n \n")
   signs(WOI + WOF) := signinit
   rounds(WOI + WOF) := roundinit
   exps(WOI + WOF) := expinit
