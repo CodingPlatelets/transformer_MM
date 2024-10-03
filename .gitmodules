@@ -1,0 +1,3 @@
+[submodule "fputil"]
+	path = fputil
+	url = git@github.com:CodingPlatelets/fp-division-pipelined.git

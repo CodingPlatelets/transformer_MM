@@ -2,6 +2,7 @@
 test_run_dir/*
 ### XilinxISE template
 # intermediate build files
+NewFeatureTest.scala
 *.csv
 hw/*
 project/*

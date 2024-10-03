@@ -185,5 +185,17 @@ class FixedPointDivision(val wholeWidth: Int, val fractionalWidth: Int) extends 
   })
   assert(io.minuend >= io.subtrahend)
 
+}
 
+class fpExample extends Module {
+  val foo = IO(Input(FixedPoint(9.W, 2.BP)))
+  val bar = IO(Input(FixedPoint(9.W, 3.BP)))
+
+  val out = IO(Output(SInt(5.W)))
+
+  val w = Wire(FixedPoint(5.W, 3.BP))
+  w := foo +& bar // Try different ops
+  dontTouch(w)
+
+  out := w
 }
