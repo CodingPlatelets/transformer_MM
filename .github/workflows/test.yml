@@ -54,4 +54,4 @@ jobs:
           echo VERILATOR_ROOT="$(pwd)/${{ env.verilator-install-dir }}/share/verilator" >> $GITHUB_ENV
           ln -sf $(pwd)/${{ env.verilator-install-dir }}/bin/verilator_bin $(pwd)/${{ env.verilator-install-dir }}/share/verilator/verilator_bin
       - name: MILL Test
-        run: ./mill transformer_MM.test -mem 50000
+        run: ./mill transformer_MM.test
