@@ -8,7 +8,6 @@ val chiselVersion = "6.2.0"
 lazy val commonChiselSettings = Seq(
   libraryDependencies ++= Seq(
     "org.chipsalliance" %% "chisel" % chiselVersion,
-    "org.scalatest" %% "scalatest" % "3.2.16" % "test",
     "edu.berkeley.cs" %% "chiseltest" % "6.0.0"
   ),
   resolvers += "aliyun".at("https://maven.aliyun.com/repository/public"),

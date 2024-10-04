@@ -34,7 +34,7 @@ trait HasChisel extends SbtModule {
 }
 
 object fputil extends HasChisel {
-  override def millSourcePath = os.pwd / "fputil" 
+  override def millSourcePath = os.pwd / "fputil"
 }
 
 trait transformer_MMModule extends ScalaModule {
@@ -49,11 +49,12 @@ trait transformer_MMModule extends ScalaModule {
 
 object transformer_MM extends transformer_MMModule with HasChisel { m =>
   def fputilModule = fputil
+
+  override def millSourcePath = os.pwd
   def unmanagedClasspath = T {
     if (!os.exists(millSourcePath / "lib")) Agg()
     else Agg.from(os.list(millSourcePath / "lib").map(PathRef(_)))
   }
-  override def millSourcePath = os.pwd
   override def scalaVersion = "2.13.12"
   override def scalacOptions = Seq(
     "-language:reflectiveCalls",
