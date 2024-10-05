@@ -47,7 +47,7 @@ trait transformer_MMModule extends ScalaModule {
   val resourcesPATH = os.pwd.toString() + "/src/main/resources"
 }
 
-object transformer_MM extends transformer_MMModule with HasChisel { m =>
+object trans extends transformer_MMModule with HasChisel { m =>
   def fputilModule = fputil
 
   override def millSourcePath = os.pwd
@@ -63,8 +63,8 @@ object transformer_MM extends transformer_MMModule with HasChisel { m =>
     "-Xcheckinit"
   )
   override def forkArgs = Seq("-Xmx8G", "-Xss256m")
-  def mainClass = Some("vitiskernel.VitisRTLKernelVerilog")
-//   def mainClass = Some("pe.NewFeatureTest")
+  // def mainClass = Some("vitiskernel.VitisRTLKernelVerilog")
+  def mainClass = Some("pe.NewFeatureTest")
   override def ivyDeps = super.ivyDeps() ++ Agg(
     defaultVersions("chiseltest")
   )

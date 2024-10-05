@@ -4,6 +4,8 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import pe.utils.QueueModule
+import chisel3.util.Pipe
+import pe.utils.PipeModule
 
 class FIFOTest extends AnyFlatSpec with ChiselScalatestTester {
 
@@ -23,6 +25,20 @@ class FIFOTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.in.enqueueSeq(Seq(1.U, 2.U, 3.U))
         }.fork {
           dut.out.expectDequeueSeq(Seq(1.U, 2.U, 3.U))
+        }.join()
+      }
+  }
+
+  behavior.of("tester on pipe module")
+  it should "pipe with it" in {
+    test(new PipeModule(UInt(bit.W), latency = 5))
+      .withAnnotations(annos) { dut =>
+        dut.in.initSource()
+        dut.out.initSink()
+        fork {
+          dut.in.enqueueSeq(Seq(1.U, 2.U, 3.U, 7.U))
+        }.fork {
+          dut.out.expectDequeueSeq(Seq(1.U, 2.U, 3.U, 7.U))
         }.join()
       }
   }

@@ -32,18 +32,3 @@ lazy val fputil = (project in file("fputil/src/main/scala")).settings(
   name := "fputil",
   commonChiselSettings
 )
-
-pomExtra := (
-  <url>http://chisel.eecs.berkeley.edu/</url>
-<licenses>
-  <license>
-    <name>BSD-style</name>
-    <url>http://www.opensource.org/licenses/bsd-license.php</url>
-    <distribution>repo</distribution>
-  </license>
-</licenses>
-<scm>
-  <url>https://github.com/ucb-bar/chisel-testers2.git</url>
-  <connection>scm:git:github.com/ucb-bar/chisel-testers2.git</connection>
-</scm>
-)
