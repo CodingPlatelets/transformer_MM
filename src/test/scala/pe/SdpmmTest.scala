@@ -28,7 +28,7 @@ class SdpmmTest extends AnyFlatSpec with ChiselScalatestTester {
         val mask = for (i <- 0 until inPutTimes) yield {
           Seq.fill(2 * numOfMask)(scala.util.Random.nextInt(L)).distinct.take(numOfMask)
         }
-        println(mask)
+        // println(mask)
 
         val testK =
           for (i <- 0 until L)
@@ -58,9 +58,9 @@ class SdpmmTest extends AnyFlatSpec with ChiselScalatestTester {
           }
         }
 
-        for (i <- 0 until inPutTimes) {
-          println(s"res $i is ${res(i).toIndexedSeq}")
-        }
+        // for (i <- 0 until inPutTimes) {
+        //   println(s"res $i is ${res(i).toIndexedSeq}")
+        // }
 
         @volatile var allClock = 0
 

@@ -39,7 +39,7 @@ class SdpmmOriginTest extends AnyFlatSpec with ChiselScalatestTester {
       // val mask = Seq.tabulate(inPutTimes) { i =>
       //   Seq.tabulate(numOfMask)(j => (i * j) % numOfMask)
       // }
-      println(mask)
+      // println(mask)
 
       val testK =
         for (i <- 0 until L)
@@ -69,9 +69,9 @@ class SdpmmOriginTest extends AnyFlatSpec with ChiselScalatestTester {
         }
       }
 
-      for (i <- 0 until inPutTimes) {
-        println(s"res $i is ${res(i).toIndexedSeq}")
-      }
+      // for (i <- 0 until inPutTimes) {
+      //   println(s"res $i is ${res(i).toIndexedSeq}")
+      // }
 
       @volatile var allClock = 0
 

@@ -1,7 +1,7 @@
 package pe
 import chisel3._
 import chisel3.util._
-import vitiskernel.util.DebugLog
+import pe.utils.DebugLog
 
 // Compute A * B, where A and B are both square matrix.
 class GEMM(val n: Int = 4, val bits: Int = 8) extends Module with DebugLog {

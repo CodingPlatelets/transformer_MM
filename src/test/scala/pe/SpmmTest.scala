@@ -33,12 +33,12 @@ class SpmmTest extends AnyFlatSpec with ChiselScalatestTester {
       }
       val res = Seq(res01, res02, res03)
 
-      println("mask0 is " + mask)
-      println("vMatrix is " + testV)
-      println("nums is " + testNum)
-      println("res01 is " + res01.toIndexedSeq)
-      println("res02 is " + res02.toIndexedSeq)
-      println("res03 is " + res03.toIndexedSeq)
+      // println("mask0 is " + mask)
+      // println("vMatrix is " + testV)
+      // println("nums is " + testNum)
+      // println("res01 is " + res01.toIndexedSeq)
+      // println("res02 is " + res02.toIndexedSeq)
+      // println("res03 is " + res03.toIndexedSeq)
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)

@@ -3,7 +3,6 @@ package pe
 import chisel3._
 import chisel3.util._
 import pe.utils._
-import vitiskernel.util.DebugLog
 
 class VecDotVecTree(val dim: Int) extends Module {
 

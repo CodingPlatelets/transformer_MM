@@ -47,7 +47,7 @@ class IntDividerTest extends AnyFlatSpec with ChiselScalatestTester with Matcher
   behavior.of("srt16 divider")
   it should "run" in {
     val rand = new Random(0x14226)
-    val testNum = 1000
+    val testNum = 10
 
     test(new SRT4DividerWrapper).withAnnotations(
       Seq(

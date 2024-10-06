@@ -3,7 +3,7 @@ package pe
 import chisel3._
 import chisel3.util._
 import configs.SdpmmConfigs
-import vitiskernel.util.DebugLog
+import pe.utils.DebugLog
 import fixedpoint._
 import pe.utils.PipeValue
 import pe.utils.common

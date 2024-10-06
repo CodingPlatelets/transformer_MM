@@ -6,8 +6,8 @@ import vitiskernel.mmstream._
 import vitiskernel.vitiskerneldata.VitisRTLKernelDataIF
 import utils.PipeValue
 import utils.common
+import utils.DebugLog
 import pe.configs.SdpmmConfigs
-import vitiskernel.util.DebugLog
 
 class TOPSdpmm extends Module with DebugLog {
   val io = IO(new Bundle {

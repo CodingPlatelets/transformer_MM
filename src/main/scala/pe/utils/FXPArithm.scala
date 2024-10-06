@@ -3,7 +3,7 @@ package pe.utils
 import chisel3._
 import chisel3.util._
 import fixedpoint._
-import vitiskernel.util.DebugLog
+import pe.utils.DebugLog
 
 class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int = 8, val ROUND: Boolean = true)
     extends Module
