@@ -5,6 +5,75 @@ import chisel3.util._
 import fixedpoint._
 import vitiskernel.util.DebugLog
 
+class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int = 8, val ROUND: Boolean = true)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val in = Input(UInt((WII + WIF).W))
+    val out = Output(UInt((WOI + WOF).W))
+    val overflow = Output(Bool())
+  })
+
+  val inr = Reg(UInt((WII + WOF).W))
+  val ini = inr(WII + WOF - 1, WOF)
+  val outf = Reg(UInt(WOF.W))
+  val outi = Reg(UInt(WOI.W))
+  val overflow = RegInit(false.B)
+
+  val tempInr = io.in(WII + WIF - 1, (WIF - WOF).abs)
+
+  // BP flow
+  if (WOF > WIF) {
+    inr := Cat(io.in, Fill(WOF - WIF, 0.U))
+  } else if (WOF == WIF || !ROUND) {
+    inr := tempInr
+  } else {
+    if (WII + WOF >= 2) {
+      when(io.in(WIF - WOF - 1) && ~(~tempInr(WII + WOF - 1) && (tempInr(WII + WOF - 2, 0).andR))) {
+        inr := tempInr +& 1.U
+      }.otherwise {
+        inr := tempInr
+      }
+    } else {
+      when(io.in(WIF - WOF - 1) && tempInr(WII + WOF - 1)) {
+        inr := tempInr +& 1.U
+      }.otherwise {
+        inr := tempInr
+      }
+    }
+  }
+
+  // INT flow
+  if (WOI >= WII) {
+    overflow := false.B
+    outi := ini.asSInt.pad(WOI)
+    outf := ini(WOI - 1, 0)
+  } else {
+    when(!ini(WII - 1) && ini(WII - 2, WOI - 1).orR) {
+      overflow := true.B
+      outi := 0.U ## Fill(WOI - 1, 1.U)
+      outf := Fill(WOF, 1.U)
+    }.elsewhen(ini(WII - 1) && !(ini(WII - 2, WOI - 1).andR)) {
+      overflow := true.B
+      outi := 1.U ## Fill(WOI - 1, 0.U)
+      outf := Fill(WOF, 0.U)
+    }.otherwise {
+      overflow := false.B
+      outi := ini(WOI - 1, 0)
+      outf := inr(WOF - 1, 0)
+    }
+  }
+
+  // combine
+
+  io.out := Cat(outi, outf)
+  io.overflow := overflow
+
+  debugLog(
+    p"in: ${io.in}, inr: ${inr}, ini: ${ini}, outf: ${outf}, outi: ${outi}, overflow: ${overflow}, tempInr: ${tempInr}\n"
+  )
+}
+
 class Fxp2Float(val WII: Int = 8, val WIF: Int = 8) extends Module {
   val io = IO(new Bundle {
     val in = Input(UInt((WII + WIF).W))

@@ -57,3 +57,34 @@ class Float2FxpTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 }
+
+class FxpZoomTest extends AnyFlatSpec with ChiselScalatestTester {
+
+  "FxpZoom" should "convert fixed-point numbers correctly" in {
+    test(new FxpZoom(8, 8, 7, 5, true)) { dut =>
+      // Test case 1: Carrier case
+      dut.io.in.poke("b00000000_11111111".U) // 8-bit integer part and 8-bit fractional part
+      dut.clock.step(3)
+      dut.io.out.expect("b0000001_00000".U) // Expected output after conversion
+      dut.io.overflow.expect(false.B)
+
+      // Test case 2: Round case
+      dut.io.in.poke("b11111111_11111111".U) // Maximum value
+      dut.clock.step(3)
+      dut.io.out.expect("b000000_00000".U) // Expected output after conversion
+      dut.io.overflow.expect(false.B)
+
+      // Test case 3: normal case
+      dut.io.in.poke("b00000000_10000001".U) // Value that should cause rounding
+      dut.clock.step(3)
+      dut.io.out.expect("b0000000_10000".U) // Expected output after rounding
+      dut.io.overflow.expect(false.B)
+
+      // Test case 4: overflow
+      dut.io.in.poke("b10000000_10000000".U) // Negative value
+      dut.clock.step(3)
+      dut.io.out.expect("b1000000_00000".U) // Expected output for negative value
+      dut.io.overflow.expect(true.B)
+    }
+  }
+}
