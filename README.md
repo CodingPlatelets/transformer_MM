@@ -1,3 +1,3 @@
-# A simple implementation of SPMM and SDDMM using chisel
+A hardware implementation of the general transformer-based LLM, with easily scaling and testing by chisel3.
 
-just for some testing.
+The implementation includes Fixedpoint, IEEE float utils, GEMM, Vector dot matrix, Softmax and Exp in fixedpoint, xilinx mem reader and writer, and K-Vcache(todo).
