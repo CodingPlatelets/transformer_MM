@@ -5,6 +5,7 @@ import chisel3.util._
 import fixedpoint._
 import pe.utils.DebugLog
 
+// test pass
 class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int = 8, val ROUND: Boolean = true)
     extends Module
     with DebugLog {
@@ -198,6 +199,7 @@ class Fxp2FloatPipe(val WII: Int = 8, val WIF: Int = 8) extends Module with Debu
   }
 }
 
+// test pass
 class Float2Fxp(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module with DebugLog {
   val io = IO(new Bundle {
     val in = Input(UInt(32.W))
@@ -348,26 +350,40 @@ class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) exte
 }
 
 class FxpAddSub(
-  val WIIA: Int = 8,
-  val WIFA: Int = 8,
-  val WIIB: Int = 8,
-  val WIFB: Int = 8,
-  val WOI:  Int = 8,
-  val WOF:  Int = 8)
-    extends Module {
+  val WIIA:  Int = 8,
+  val WIFA:  Int = 8,
+  val WIIB:  Int = 8,
+  val WIFB:  Int = 8,
+  val WOI:   Int = 8,
+  val WOF:   Int = 8,
+  val ROUND: Boolean = true)
+    extends Module
+    with DebugLog {
   val io = IO(new Bundle {
-    val ina = Input(SInt((WIIA + WIFA).W))
-    val inb = Input(SInt((WIIB + WIFB).W))
+    val ina = Input(UInt((WIIA + WIFA).W))
+    val inb = Input(UInt((WIIB + WIFB).W))
     // true for subtraction, false for addition
     val sub = Input(common.AddOrSub())
-    val out = Output(SInt((WOI + WOF).W))
+    val out = Output(UInt((WOI + WOF).W))
+    val overflow = Output(Bool())
   })
 
-  val middleWire = Wire(FixedPoint((WOI + WOF).W, WOF.BP))
+  val WII = if (WIIA > WIIB + 1) WIIA else WIIB + 1
+  val WIF = if (WIFA > WIFB) WIFA else WIFB
 
-  middleWire := io.ina.asFixedPoint(WIFA.BP) +& io.inb.asFixedPoint(WIFB.BP)
+  val middleWire = Wire(FixedPoint((WII + WIF + 1).W, WIF.BP))
 
-  io.out := RegNext(middleWire.asSInt)
+  middleWire := Mux(
+    io.sub === common.AddOrSub.ADD,
+    io.ina.asFixedPoint(WIFA.BP) +& io.inb.asFixedPoint(WIFB.BP),
+    io.ina.asFixedPoint(WIFA.BP) -& io.inb.asFixedPoint(WIFB.BP)
+  )
+
+  val resZoom = Module(new FxpZoom(WII + 1, WIF, WOI, WOF, ROUND))
+  resZoom.io.in <> middleWire.asUInt
+  io.out <> resZoom.io.out
+  io.overflow <> resZoom.io.overflow
+
 }
 
 class FxpMul(
