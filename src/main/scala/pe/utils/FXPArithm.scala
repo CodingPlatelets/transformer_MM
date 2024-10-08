@@ -394,7 +394,8 @@ class FxpMul(
   val WOI:   Int = 8,
   val WOF:   Int = 8,
   val ROUND: Boolean = true)
-    extends Module {
+    extends Module
+    with DebugLog {
   val io = IO(new Bundle {
     val ina = Input(UInt((WIIA + WIFA).W))
     val inb = Input(UInt((WIIB + WIFB).W))
@@ -412,7 +413,10 @@ class FxpMul(
   resZoom.io.in <> middleWire.asUInt
   io.out <> resZoom.io.out
   io.overflow <> resZoom.io.overflow
-
+  // debugLog(
+  //   p"in: ${io.ina}, ${io.inb}, middleWire: ${middleWire}, out: ${io.out}, overflow: ${io.overflow}\n",
+  //   LogLevel.DEBUG
+  // )
 }
 
 class FxpDiv(
