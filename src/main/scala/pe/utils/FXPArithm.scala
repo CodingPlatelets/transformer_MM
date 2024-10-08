@@ -387,126 +387,150 @@ class FxpAddSub(
 }
 
 class FxpMul(
-  val WIIA: Int = 8,
-  val WIFA: Int = 8,
-  val WIIB: Int = 8,
-  val WIFB: Int = 8,
-  val WOI:  Int = 8,
-  val WOF:  Int = 8)
+  val WIIA:  Int = 8,
+  val WIFA:  Int = 8,
+  val WIIB:  Int = 8,
+  val WIFB:  Int = 8,
+  val WOI:   Int = 8,
+  val WOF:   Int = 8,
+  val ROUND: Boolean = true)
     extends Module {
   val io = IO(new Bundle {
-    val ina = Input(SInt((WIIA + WIFA).W))
-    val inb = Input(SInt((WIIB + WIFB).W))
-    val out = Output(SInt((WOI + WOF).W))
+    val ina = Input(UInt((WIIA + WIFA).W))
+    val inb = Input(UInt((WIIB + WIFB).W))
+    val out = Output(UInt((WOI + WOF).W))
+    val overflow = Output(Bool())
   })
 
-  val middleWire = Wire(FixedPoint((WOI + WOF).W, WOF.BP))
+  val WRI = WIIA + WIIB
+  val WRF = WIFA + WIFB
+
+  val middleWire = Wire(FixedPoint((WRI + WRF).W, WRF.BP))
   middleWire := io.ina.asFixedPoint(WIFA.BP) * io.inb.asFixedPoint(WIFB.BP)
 
-  io.out := middleWire.asUInt
+  val resZoom = Module(new FxpZoom(WRI, WRF, WOI, WOF, ROUND))
+  resZoom.io.in <> middleWire.asUInt
+  io.out <> resZoom.io.out
+  io.overflow <> resZoom.io.overflow
 
 }
 
-// pipeline stage = WOI + WOF + 3
-// class FxpDivPipe(
-//   val WIIA: Int = 8,
-//   val WIFA: Int = 8,
-//   val WIIB: Int = 8,
-//   val WIFB: Int = 8,
-//   val WOI:  Int = 8,
-//   val WOF:  Int = 8)
-//     extends Module {
-//   val io = IO(new Bundle {
-//     val dividend = Input(Valid(UInt((WIIA + WIFA).W)))
-//     val divisor = Input(Valid(UInt((WIIB + WIFB).W)))
-//     val out = Valid(UInt((WOI + WOF).W))
-//     val overflow = Valid(Bool())
-//   })
+class FxpDiv(
+  val WIIA:  Int = 8,
+  val WIFA:  Int = 8,
+  val WIIB:  Int = 8,
+  val WIFB:  Int = 8,
+  val WOI:   Int = 8,
+  val WOF:   Int = 8,
+  val ROUND: Boolean = true)
+    extends Module {
+  val io = IO(new Bundle {
+    val dividend = Input(UInt((WIIA + WIFA).W))
+    val divisor = Input(UInt((WIIB + WIFB).W))
+    val out = Output(UInt((WOI + WOF).W))
+    val overflow = Output(Bool())
+  })
 
-//   val WRI = if (WOI + WIIB > WIIA) WOI + WIIB else WIIA
-//   val WRF = if (WOF + WIFB > WIFA) WOF + WIFB else WIFA
+  val WRI = if (WOI + WIIB > WIIA) WOI + WIIB else WIIA
+  val WRF = if (WOF + WIFB > WIFA) WOF + WIFB else WIFA
 
-//   val divd = Wire(UInt((WRI + WRF).W))
-//   val divr = Wire(UInt((WRI + WRF).W))
-//   val roundedres = RegInit(0.U((WOI + WOF).W))
-//   val rsign = RegInit(false.B)
-//   val sign = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(false.B)))
-//   val acc = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
-//   val divdp = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
-//   val divrp = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
-//   val validPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(false.B)))
-//   val res = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WOI + WOF).W))))
+  val ONEA = 1.U((WIIA + WIFA).W)
+  val ONEB = 1.U((WIIA + WIFA).W)
 
-//   val ONEO = 1.U((WOI + WOF).W)
-//   val ONEA = 1.U((WIIA + WIFA).W)
-//   val ONEB = 1.U((WIIB + WIFB).W)
+  val divendZoom = Module(new FxpZoom(WIIA, WIFA, WRI, WRF, false))
+  val divorZoom = Module(new FxpZoom(WIIB, WIFB, WRI, WRF, false))
 
-//   // Convert dividend and divisor to positive numbers
-//   val udividend = Mux(io.dividend.bits(WIIA + WIFA - 1), (~io.dividend.bits) + ONEA, io.dividend)
-//   val udivisor = Mux(io.divisor.bits(WIIB + WIFB - 1), (~io.divisor.bits) + ONEB, io.divisor)
+  val divd = Wire(UInt((WRI + WRF).W))
+  val divr = Wire(UInt((WRI + WRF).W))
 
-//   val dividendZoom = Module(new FxpZoom(WIIA, WIFA, WRI, WRF, false))
-//   val divisorZoom = Module(new FxpZoom(WIIB, WIFB, WRI, WRF, false))
-//   dividendZoom.io.in := udividend
-//   divd := dividendZoom.io.out
+  // convert both dividend and divisor to postive number and the same width
+  divendZoom.io.in <> Mux(io.dividend(WIIA + WIFA - 1), (~io.dividend) + ONEA, io.dividend)
+  divorZoom.io.in <> Mux(io.divisor(WIIB + WIFB - 1), (~io.divisor) + ONEB, io.divisor)
 
-//   divisorZoom.io.in := udivisor
-//   divr := divisorZoom.io.out
+  divendZoom.io.overflow := DontCare
+  divorZoom.io.overflow := DontCare
 
-//   val tmp = RegInit(0.U((WRI + WRF).W))
-//   // 1st pipeline stage: convert dividend and divisor to positive numbers
-//   acc(0) := 0.U
-//   divdp(0) := divd
-//   divrp(0) := divr
-//   validPipe(0) := io.dividend.valid && io.divisor.valid
-//   io.out.valid := ShiftRegister(validPipe(WOI + WOF), 2)
-//   sign(0) := io.dividend.bits(WIIA + WIFA - 1) ^ io.divisor.bits(WIIB + WIFB - 1)
+  divd <> divendZoom.io.out
+  divr <> divorZoom.io.out
 
-//   // From 2nd to WOI + WOF + 1 pipeline stages: calculate division
-//   for (ii <- 0 until WOI + WOF) {
-//     res(ii + 1) := res(ii)
-//     divdp(ii + 1) := divdp(ii)
-//     divrp(ii + 1) := divrp(ii)
-//     sign(ii + 1) := sign(ii)
-//     validPipe(ii + 1) := validPipe(ii)
-//     if (ii < WOI) tmp := acc(ii) + (divrp(ii) << (WOI - 1 - ii))
-//     else tmp := acc(ii) + (divrp(ii) >> (1 + ii - WOI))
-//     when(tmp < divdp(ii)) {
-//       acc(ii + 1) := tmp
-//       res(ii + 1)(WOF + WOI - 1 - ii) := true.B
-//     }.otherwise {
-//       acc(ii + 1) := acc(ii)
-//       res(ii + 1)(WOF + WOI - 1 - ii) := false.B
-//     }
-//   }
+  val signPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(false.B)))
+  val accPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
+  val divdPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
+  val divrPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
+  val resPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WOI + WOF).W))))
+  val ONEO = 1.U((WOI + WOF).W)
 
-//   // Next pipeline stage: process round
-//   when(
-//     ROUND.B && !res(WOI + WOF).andR && (acc(WOI + WOF) + (divrp(WOI + WOF) >> WOF) - divdp(WOI + WOF)) < (divdp(
-//       WOI + WOF
-//     ) - acc(WOI + WOF))
-//   ) {
-//     roundedres := res(WOI + WOF) + ONEO
-//   }.otherwise {
-//     roundedres := res(WOI + WOF)
-//   }
-//   rsign := sign(WOI + WOF)
+  // init the first stage
+  resPipe(0) := 0.U
+  accPipe(0) := 0.U
+  divdPipe(0) := divd
+  divrPipe(0) := divr
+  signPipe(0) := ShiftRegister(io.dividend(WIIA + WIFA - 1) ^ io.divisor(WIIB + WIFB - 1), 2)
 
-//   // The last pipeline stage: process roof and output
-//   io.overflow := false.B
-//   when(rsign) {
-//     when(roundedres(WOI + WOF - 1)) {
-//       io.overflow := Mux(roundedres(WOI + WOF - 2, 0).orR, true.B, false.B)
-//       io.out := Cat(1.U(1.W), 0.U((WOI + WOF - 1).W))
-//     }.otherwise {
-//       io.out.bits := (~roundedres) + ONEO
-//     }
-//   }.otherwise {
-//     when(roundedres(WOI + WOF - 1)) {
-//       io.overflow := true.B
-//       io.out.bits := Cat(0.U(1.W), Fill(WOI + WOF - 1, 1.U))
-//     }.otherwise {
-//       io.out.bits := roundedres
-//     }
-//   }
-// }
+  // pipeline stages
+  for (ii <- 0 until WOF + WOF) {
+    resPipe(ii + 1) := resPipe(ii)
+    divdPipe(ii + 1) := divdPipe(ii)
+    divrPipe(ii + 1) := divrPipe(ii)
+    signPipe(ii + 1) := signPipe(ii)
+
+    val temp = Wire(UInt((WRI + WRF).W))
+    if (ii < WOI) {
+      temp := accPipe(ii) + (divrPipe(ii) << (WOI - 1 - ii))
+    } else {
+      temp := accPipe(ii) + (divrPipe(ii) >> (1 + ii - WOI))
+    }
+
+    val temResPipe = VecInit(resPipe(ii + 1).asBools)
+
+    when(temp < divdPipe(ii)) {
+      accPipe(ii + 1) := temp
+      temResPipe(WOF + WOI - 1 - ii) := true.B
+      resPipe(ii + 1) := temResPipe.asUInt
+    }.otherwise {
+      accPipe(ii + 1) := accPipe(ii)
+      temResPipe(WOF + WOI - 1 - ii) := false.B
+      resPipe(ii + 1) := temResPipe.asUInt
+    }
+  }
+
+  // process ROUND
+  val rounder = RegInit(0.U((WOI + WOF).W))
+  val rSign = RegInit(false.B)
+  val lastPipeBigger =
+    accPipe(WOI + WOF) + (divrPipe(WOI + WOF) >> WOF) - divdPipe(WOI + WOF) < divdPipe(WOI + WOF) - accPipe(WOI + WOF)
+  when(ROUND.B && !(resPipe(WOI + WOF).andR) && lastPipeBigger) {
+    rounder := resPipe(WOI + WOF) + ONEO
+  }.otherwise {
+    rounder := resPipe(WOI + WOF)
+  }
+  rSign := signPipe(WOI + WOF)
+
+  // process root and output
+  val overflow = RegInit(false.B)
+  val res = RegInit(0.U((WOI + WOF).W))
+
+  io.overflow <> overflow
+  io.out <> res
+
+  when(rSign) {
+    when(rounder(WOI + WOF - 1)) {
+      when(rounder(WOI + WOF - 2, 0).orR) {
+        overflow := true.B
+      }.otherwise(overflow := false.B)
+      res := 1.U ## Fill(WOI + WOF - 1, 0.U)
+    }.otherwise {
+      res := (~rounder) + ONEO
+      overflow := false.B
+    }
+  }.otherwise {
+    when(rounder(WOI + WOF - 1)) {
+      overflow := true.B
+      res := 0.U ## Fill(WOI + WOF - 1, 1.U)
+    }.otherwise {
+      res := rounder
+      overflow := false.B
+    }
+  }
+
+}
