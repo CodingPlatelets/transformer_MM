@@ -427,7 +427,8 @@ class FxpDiv(
   val WOI:   Int = 8,
   val WOF:   Int = 8,
   val ROUND: Boolean = true)
-    extends Module {
+    extends Module
+    with DebugLog {
   val io = IO(new Bundle {
     val dividend = Input(UInt((WIIA + WIFA).W))
     val divisor = Input(UInt((WIIB + WIFB).W))
@@ -461,40 +462,36 @@ class FxpDiv(
   val accPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
   val divdPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
   val divrPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WRI + WRF).W))))
-  val resPipe = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WOI + WOF).W))))
+  val resPipe = RegInit(VecInit.fill(WOI + WOF + 1, WOI + WOF)(false.B))
   val ONEO = 1.U((WOI + WOF).W)
 
   // init the first stage
-  resPipe(0) := 0.U
+  resPipe(0) := VecInit.fill(WOI + WOF)(false.B)
   accPipe(0) := 0.U
   divdPipe(0) := divd
   divrPipe(0) := divr
   signPipe(0) := ShiftRegister(io.dividend(WIIA + WIFA - 1) ^ io.divisor(WIIB + WIFB - 1), 2)
 
   // pipeline stages
-  for (ii <- 0 until WOF + WOF) {
+  for (ii <- 0 until WOI + WOF) {
     resPipe(ii + 1) := resPipe(ii)
     divdPipe(ii + 1) := divdPipe(ii)
     divrPipe(ii + 1) := divrPipe(ii)
     signPipe(ii + 1) := signPipe(ii)
 
-    val temp = Wire(UInt((WRI + WRF).W))
-    if (ii < WOI) {
-      temp := accPipe(ii) + (divrPipe(ii) << (WOI - 1 - ii))
-    } else {
-      temp := accPipe(ii) + (divrPipe(ii) >> (1 + ii - WOI))
-    }
-
-    val temResPipe = VecInit(resPipe(ii + 1).asBools)
+    val temp =
+      if (ii < WOI) {
+        accPipe(ii) + (divrPipe(ii) << (WOI - 1 - ii))
+      } else {
+        accPipe(ii) + (divrPipe(ii) >> (1 + ii - WOI))
+      }
 
     when(temp < divdPipe(ii)) {
       accPipe(ii + 1) := temp
-      temResPipe(WOF + WOI - 1 - ii) := true.B
-      resPipe(ii + 1) := temResPipe.asUInt
+      resPipe(ii + 1)(WOF + WOI - 1 - ii) := true.B
     }.otherwise {
       accPipe(ii + 1) := accPipe(ii)
-      temResPipe(WOF + WOI - 1 - ii) := false.B
-      resPipe(ii + 1) := temResPipe.asUInt
+      resPipe(ii + 1)(WOF + WOI - 1 - ii) := false.B
     }
   }
 
@@ -503,19 +500,16 @@ class FxpDiv(
   val rSign = RegInit(false.B)
   val lastPipeBigger =
     accPipe(WOI + WOF) + (divrPipe(WOI + WOF) >> WOF) - divdPipe(WOI + WOF) < divdPipe(WOI + WOF) - accPipe(WOI + WOF)
-  when(ROUND.B && !(resPipe(WOI + WOF).andR) && lastPipeBigger) {
-    rounder := resPipe(WOI + WOF) + ONEO
+  when(ROUND.B && !(resPipe(WOI + WOF).asUInt.andR) && lastPipeBigger) {
+    rounder := resPipe(WOI + WOF).asUInt + ONEO
   }.otherwise {
-    rounder := resPipe(WOI + WOF)
+    rounder := resPipe(WOI + WOF).asUInt
   }
   rSign := signPipe(WOI + WOF)
 
   // process root and output
   val overflow = RegInit(false.B)
   val res = RegInit(0.U((WOI + WOF).W))
-
-  io.overflow <> overflow
-  io.out <> res
 
   when(rSign) {
     when(rounder(WOI + WOF - 1)) {
@@ -536,5 +530,6 @@ class FxpDiv(
       overflow := false.B
     }
   }
-
+  io.overflow <> overflow
+  io.out <> res
 }

@@ -203,9 +203,18 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
     BigInt(hex, 16).toString(2)
   }
 
+  def hex2SignedInt(hex: String, width: Int) = {
+    val maxUnsignedValue = BigInt(2).pow(width)
+    val maxPositiveValue = BigInt(2).pow(width - 1)
+    val resTmp = BigInt(hex, 16)
+    if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
+    else { resTmp }
+  }
+
+  val annos = Seq(VerilatorBackendAnnotation)
   behavior.of("FXPMulDiv")
   it should ("do mul and div") in {
-    test(new FxpMul(WIIA, WIFA, WIIB, WIFB, WOI, WOF, true)) { dut =>
+    test(new FxpMul(WIIA, WIFA, WIIB, WIFB, WOI, WOF, true)).withAnnotations(annos) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -220,11 +229,11 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
       }.fork {
         dut.clock.step(2)
         for ((a, b) <- testInput) {
-          var aInt = java.lang.Long.parseLong(a, 16).toInt.toDouble / (1 << WIFA)
-          var bInt = java.lang.Long.parseLong(b, 16).toInt.toDouble / (1 << WIFB)
-          var abmul = aInt * bInt
           val maxUnsignedValue = BigInt(2).pow(WOF + WOI)
           val maxPositiveValue = BigInt(2).pow(WOF + WOI - 1)
+          var aInt = hex2SignedInt(a, WIIA + WIFA).toDouble / (1 << WIFA)
+          var bInt = hex2SignedInt(b, WIIB + WIFB).toDouble / (1 << WIFB)
+          var abmul = aInt * bInt
 
           val resTmp = dut.io.out.peekInt()
           var res = (if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
@@ -242,6 +251,45 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
       }.join()
 
     }
+  }
 
+  it should ("do div") in {
+    test(new FxpDiv(WIIA, WIFA, WIIB, WIFB, WOI, WOF, true)).withAnnotations(annos) { dut =>
+      dut.reset.poke(true.B)
+      dut.clock.step()
+      dut.reset.poke(false.B)
+      dut.clock.step()
+
+      fork {
+        for ((a, b) <- testInput) {
+          dut.io.dividend.poke(("b" + hex2Bin(a)).U)
+          dut.io.divisor.poke(("b" + hex2Bin(b)).U)
+          dut.clock.step()
+        }
+      }.fork {
+        dut.clock.step(WOI + WOF + 5)
+        for ((a, b) <- testInput) {
+          val maxUnsignedValue = BigInt(2).pow(WOF + WOI)
+          val maxPositiveValue = BigInt(2).pow(WOF + WOI - 1)
+          var aInt = hex2SignedInt(a, WIIA + WIFA).toDouble / (1 << WIFA)
+          var bInt = hex2SignedInt(b, WIIB + WIFB).toDouble / (1 << WIFB)
+          var abdiv = aInt / bInt
+
+          val resTmp = dut.io.out.peekInt()
+          var res = (if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
+                     else { resTmp }).toDouble / (1 << WOF)
+          var over = dut.io.overflow.peekBoolean()
+
+          println(f"a= $aInt%16f, b= $bInt%16f, a/b= $abdiv%16f ($over%s)\t odiv= $res%16f")
+
+          dut.clock.step()
+        }
+
+        dut.io.dividend.poke(BigInt(zeroTuple._1, 16).U)
+        dut.io.divisor.poke(BigInt(zeroTuple._2, 16).U)
+        dut.clock.step(WOI + WOF + 8)
+      }.join()
+
+    }
   }
 }
