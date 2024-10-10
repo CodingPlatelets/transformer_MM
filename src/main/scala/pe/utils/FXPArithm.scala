@@ -413,10 +413,6 @@ class FxpMul(
   resZoom.io.in <> middleWire.asUInt
   io.out <> resZoom.io.out
   io.overflow <> resZoom.io.overflow
-  // debugLog(
-  //   p"in: ${io.ina}, ${io.inb}, middleWire: ${middleWire}, out: ${io.out}, overflow: ${io.overflow}\n",
-  //   LogLevel.DEBUG
-  // )
 }
 
 class FxpDiv(
@@ -532,4 +528,75 @@ class FxpDiv(
   }
   io.overflow <> overflow
   io.out <> res
+}
+
+class FxpSqrt(
+  val WII:   Int = 8,
+  val WIF:   Int = 8,
+  val WOI:   Int = 8,
+  val WOF:   Int = 8,
+  val ROUND: Boolean = true)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val in = Input(UInt((WII + WIF).W))
+    val out = Output(UInt((WOI + WOF).W))
+    val overflow = Output(Bool())
+  })
+
+  val WTI = if (WII % 2 == 1) WII + 1 else WII
+  val WRI = WTI / 2
+
+  val ONEI = 1.U((WII + WIF).W)
+  val ONET = 1.U((WTI + WIF).W)
+  val ONER = 1.U((WRI + WIF).W)
+
+  val signPipe = RegInit(VecInit.fill(WRI + WIF + 1)(false.B))
+  val inuPipe = RegInit(VecInit.fill(WRI + WIF + 1)(0.U((WTI + WIF).W)))
+  val resu2Pipe = RegInit(VecInit.fill(WRI + WIF + 1)(0.U((WTI + WIF).W)))
+  val resuPipe = RegInit(VecInit.fill(WRI + WIF + 1, WTI + WIF)(false.B))
+
+  // init the first stage
+  signPipe(0) := io.in(WII + WIF - 1)
+  val inputPostive = Mux(io.in(WII + WIF - 1), ~io.in + ONEI, io.in)
+  inuPipe(0) := inputPostive.pad(WTI + WIF)
+  resu2Pipe(0) := 0.U
+  resuPipe(0) := VecInit.fill(WTI + WIF)(false.B)
+
+  // pipeline stages
+  for (ii <- WRI - 1 to -WIF by -1) {
+    val jj = WRI - 1 - ii
+    signPipe(jj + 1) := signPipe(jj)
+    inuPipe(jj + 1) := inuPipe(jj)
+    resu2Pipe(jj + 1) := resu2Pipe(jj)
+    resuPipe(jj + 1) := resuPipe(jj)
+
+    val resu2Tmp = if (ii >= 0) {
+      resu2Pipe(jj) + (resuPipe(jj).asUInt << (1 + ii)) + (ONET << 2 * ii + WIF)
+    } else if (2 * ii + WIF >= 0) {
+      resu2Pipe(jj) + ((resuPipe(jj).asUInt >> (-1 - ii)) + (ONET << 2 * ii + WIF))
+    } else {
+      resu2Pipe(jj) + (resuPipe(jj).asUInt >> (-1 - ii))
+    }
+
+    when(resu2Tmp <= inuPipe(jj) && inuPipe(jj) =/= 0.U) {
+      resuPipe(jj + 1)(ii + WIF) := true.B
+      resu2Pipe(jj + 1) := resu2Tmp
+    }
+
+  }
+
+  // process ROUND
+  val resushort =
+    Mux(
+      signPipe(WRI + WIF),
+      ~(resuPipe(WRI + WIF).asUInt(WRI + WIF, 0)) + ONER,
+      (resuPipe(WRI + WIF).asUInt)(WRI + WIF, 0)
+    )
+
+  val resZoom = Module(new FxpZoom(WRI + 1, WIF, WOI, WOF, ROUND))
+
+  resZoom.io.in <> resushort
+  io.out <> resZoom.io.out
+  io.overflow <> resZoom.io.overflow
 }
