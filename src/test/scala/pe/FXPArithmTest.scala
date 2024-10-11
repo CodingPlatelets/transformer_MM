@@ -293,3 +293,104 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 }
+
+class FXPSqrtTest extends AnyFlatSpec with ChiselScalatestTester {
+  val WII = 10;
+  val WIF = 10;
+  val WOI = 6;
+  val WOF = 12;
+  val values = Seq(
+    "f0d77",
+    "96e31",
+    "7f97f",
+    "fffff",
+    "caab9",
+    "d957c",
+    "1cd28",
+    "2cd6b",
+    "8506c",
+    "e496f",
+    "3dcd6",
+    "00000",
+    "80000",
+    "e0fa9",
+    "ea05f",
+    "03f17",
+    "856d1",
+    "ce8c1",
+    "a45dc",
+    "0094f",
+    "c9f55",
+    "b70c2",
+    "08061",
+    "1e935",
+    "e7eac",
+    "9c397",
+    "43c04",
+    "5abbd",
+    "5736b",
+    "fbce6",
+    "c4777",
+    "e0da0",
+    "b581a",
+    "03fac",
+    "60ffd",
+    "07203",
+    "9d2f9",
+    "289aa",
+    "07a47",
+    "ecc5b",
+    "c9965",
+    "03643",
+    "e5eed"
+  )
+
+  val zero = "00000"
+
+  val annos = Seq(VerilatorBackendAnnotation)
+
+  def hex2SignedInt(hex: String, width: Int) = {
+    val maxUnsignedValue = BigInt(2).pow(width)
+    val maxPositiveValue = BigInt(2).pow(width - 1)
+    val resTmp = BigInt(hex, 16)
+    if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
+    else { resTmp }
+  }
+  val maxUnsignedValue = BigInt(2).pow(WOF + WOI)
+  val maxPositiveValue = BigInt(2).pow(WOF + WOI - 1)
+
+  behavior.of("FXPSqrt")
+  it should ("do sqrt correctly") in {
+    test(new FxpSqrt(WII, WIF, WOI, WOF, true)).withAnnotations(annos) { dut =>
+      dut.reset.poke(true.B)
+      dut.clock.step()
+      dut.reset.poke(false.B)
+      dut.clock.step()
+
+      fork {
+        for (i <- values) {
+          dut.io.in.poke(("b" + BigInt(i, 16).toString(2)).U)
+          dut.clock.step()
+        }
+      }.fork {
+        dut.clock.step((WII + 2 - 1) / 2 + WIF + 2 + 1)
+
+        for (i <- values) {
+
+          val resTmp = dut.io.out.peekInt()
+          val res = (if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
+                     else { resTmp }).toDouble / (1 << WOF)
+          val res2 = math.pow(res, 2)
+          val input = hex2SignedInt(i, WII + WIF).toDouble / (1 << WIF)
+          val over = if (dut.io.overflow.peekBoolean()) { "(O)" }
+          else { "( )" }
+
+          println(f"input = $input%16f,\t output = $res%12f $over, output^2 = $res2%12f")
+          dut.clock.step()
+        }
+
+        dut.io.in.poke(("b" + BigInt(zero, 16).toString(2)).U)
+      }.join()
+    }
+  }
+}
