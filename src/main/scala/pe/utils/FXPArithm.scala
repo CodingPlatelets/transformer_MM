@@ -48,7 +48,7 @@ class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int
   if (WOI >= WII) {
     overflow := false.B
     outi := ini.asSInt.pad(WOI).asUInt
-    outf := inr(WOI - 1, 0)
+    outf := inr(WOF - 1, 0)
   } else {
     when(!ini(WII - 1) && ini(WII - 2, WOI - 1).orR) {
       overflow := true.B

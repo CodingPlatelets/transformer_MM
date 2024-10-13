@@ -96,6 +96,49 @@ class FXPArithmTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
+  behavior.of("FXP zoom extend")
+  it should "zoom fixedpoint correctly" in {
+    test(new FxpZoom(8, 8, 8, 9, true)).withAnnotations(annos) { dut =>
+      dut.reset.poke(true.B)
+      dut.clock.step()
+      dut.reset.poke(false.B)
+
+      fork {
+        // Test case 1: Carrier case
+        dut.io.in.poke("b00000000_11111111".U) // 8-bit integer part and 8-bit fractional part
+        dut.clock.step()
+
+        // Test case 2: Round case
+        dut.io.in.poke("b11111111_11111111".U) // Maximum value
+        dut.clock.step()
+
+        // Test case 3: normal case
+        dut.io.in.poke("b00000000_10000001".U) // Value that should cause rounding
+        dut.clock.step()
+
+        // Test case 4: overflow
+        dut.io.in.poke("b10000000_10000000".U) // Negative value
+        dut.clock.step()
+      }.fork {
+        dut.clock.step(2)
+        dut.io.out.expect("b00000000_111111110".U)
+        dut.io.overflow.expect(false.B)
+
+        dut.clock.step()
+        dut.io.out.expect("b11111111_111111110".U)
+        dut.io.overflow.expect(false.B)
+
+        dut.clock.step()
+        dut.io.out.expect("b0000000_100000010".U)
+        dut.io.overflow.expect(false.B)
+
+        dut.clock.step()
+        dut.io.out.expect("b10000000_100000000".U)
+        dut.io.overflow.expect(false.B)
+      }.join()
+    }
+  }
+
   behavior.of("FxpAddSub")
   it should ("do add and sub correctly") in {
     test(new FxpAddSub(8, 8, 6, 5, 7, 7, true)).withAnnotations(annos) { dut =>
@@ -298,8 +341,8 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
 class FXPSqrtTest extends AnyFlatSpec with ChiselScalatestTester {
   val WII = 10;
   val WIF = 10;
-  val WOI = 10;
-  val WOF = 10;
+  val WOI = 6;
+  val WOF = 12;
   val values = Seq(
     "f0d77",
     "96e31",
