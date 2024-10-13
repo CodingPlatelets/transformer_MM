@@ -253,6 +253,7 @@ class Float2Fxp(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends 
   io.overflow := RegNext(overflow)
 }
 
+// todo: need test
 class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module with DebugLog {
   val io = IO(new Bundle {
     val in = Input(UInt(32.W))
@@ -544,44 +545,44 @@ class FxpSqrt(
     val overflow = Output(Bool())
   })
 
-  val WTI = if (WII % 2 == 1) WII + 1 else WII
+  var WTI = if (WII % 2 == 1) WII + 1 else WII
   val WRI = WTI / 2
 
-  val ONEI = 1.U((WII + WIF).W)
-  val ONET = 1.U((WTI + WIF).W)
-  val ONER = 1.U((WRI + WIF).W)
+  val ONET = 1.U((WTI + WIF - 1).W)
+  val ONER = 1.U((WRI + WIF - 1).W)
 
   val signPipe = RegInit(VecInit.fill(WRI + WIF + 1)(false.B))
   val inuPipe = RegInit(VecInit.fill(WRI + WIF + 1)(0.U((WTI + WIF).W)))
   val resu2Pipe = RegInit(VecInit.fill(WRI + WIF + 1)(0.U((WTI + WIF).W)))
-  val resuPipe = RegInit(VecInit.fill(WRI + WIF + 1, WTI + WIF)(false.B))
+  val resuPipe = RegInit(VecInit.fill(WRI + WIF + 1)(0.U((WTI + WIF).W)))
 
   // init the first stage
   signPipe(0) := io.in(WII + WIF - 1)
-  val inputPostive = Mux(io.in(WII + WIF - 1), ~io.in + ONEI, io.in)
-  inuPipe(0) := inputPostive.pad(WTI + WIF)
+  val inputPostive = io.in.asSInt.pad(WTI + WIF)
+  inuPipe(0) := Mux(inputPostive < 0.S, -inputPostive, inputPostive).asUInt
   resu2Pipe(0) := 0.U
-  resuPipe(0) := VecInit.fill(WTI + WIF)(false.B)
+  resuPipe(0) := 0.U
 
   // pipeline stages
   for (ii <- WRI - 1 to -WIF by -1) {
     val jj = WRI - 1 - ii
     signPipe(jj + 1) := signPipe(jj)
     inuPipe(jj + 1) := inuPipe(jj)
-    resu2Pipe(jj + 1) := resu2Pipe(jj)
-    resuPipe(jj + 1) := resuPipe(jj)
 
     val resu2Tmp = if (ii >= 0) {
-      resu2Pipe(jj) + (resuPipe(jj).asUInt << (1 + ii)) + (ONET << 2 * ii + WIF)
+      resu2Pipe(jj) +& (resuPipe(jj) << (1 + ii)) +& (ONET << (2 * ii + WIF))
     } else if (2 * ii + WIF >= 0) {
-      resu2Pipe(jj) + ((resuPipe(jj).asUInt >> (-1 - ii)) + (ONET << 2 * ii + WIF))
+      resu2Pipe(jj) +& (resuPipe(jj) >> (-1 - ii)) +& (ONET << (2 * ii + WIF))
     } else {
-      resu2Pipe(jj) + (resuPipe(jj).asUInt >> (-1 - ii))
+      resu2Pipe(jj) +& (resuPipe(jj) >> (-1 - ii))
     }
 
     when(resu2Tmp <= inuPipe(jj) && inuPipe(jj) =/= 0.U) {
-      resuPipe(jj + 1)(ii + WIF) := true.B
+      resuPipe(jj + 1) := (1.U(1.W) << (WIF + ii)) | resuPipe(jj)
       resu2Pipe(jj + 1) := resu2Tmp
+    }.otherwise {
+      resu2Pipe(jj + 1) := resu2Pipe(jj)
+      resuPipe(jj + 1) := resuPipe(jj)
     }
 
   }
@@ -590,8 +591,8 @@ class FxpSqrt(
   val resushort =
     Mux(
       signPipe(WRI + WIF),
-      ~(resuPipe(WRI + WIF).asUInt(WRI + WIF, 0)) + ONER,
-      (resuPipe(WRI + WIF).asUInt)(WRI + WIF, 0)
+      ~(resuPipe(WRI + WIF)(WRI + WIF, 0)) + ONER,
+      resuPipe(WRI + WIF)(WRI + WIF, 0)
     )
 
   val resZoom = Module(new FxpZoom(WRI + 1, WIF, WOI, WOF, ROUND))
@@ -599,4 +600,9 @@ class FxpSqrt(
   resZoom.io.in <> resushort
   io.out <> resZoom.io.out
   io.overflow <> resZoom.io.overflow
+
+  // debugLog(
+  //   p"in: ${io.in}, signPipe: ${signPipe}, \n inuPipe: ${inuPipe},\n resu2Pipe: ${resu2Pipe}, \n resuPipe: ${resuPipe},\n resushort: ${resushort}\n",
+  //   LogLevel.DEBUG
+  // )
 }

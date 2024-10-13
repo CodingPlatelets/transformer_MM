@@ -266,6 +266,9 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.io.divisor.poke(("b" + hex2Bin(b)).U)
           dut.clock.step()
         }
+
+        dut.io.dividend.poke(BigInt(zeroTuple._1, 16).U)
+        dut.io.divisor.poke(BigInt(zeroTuple._2, 16).U)
       }.fork {
         dut.clock.step(WOI + WOF + 5)
         for ((a, b) <- testInput) {
@@ -285,8 +288,6 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.clock.step()
         }
 
-        dut.io.dividend.poke(BigInt(zeroTuple._1, 16).U)
-        dut.io.divisor.poke(BigInt(zeroTuple._2, 16).U)
         dut.clock.step(WOI + WOF + 8)
       }.join()
 
@@ -297,8 +298,8 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
 class FXPSqrtTest extends AnyFlatSpec with ChiselScalatestTester {
   val WII = 10;
   val WIF = 10;
-  val WOI = 6;
-  val WOF = 12;
+  val WOI = 10;
+  val WOF = 10;
   val values = Seq(
     "f0d77",
     "96e31",
@@ -372,6 +373,10 @@ class FXPSqrtTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.io.in.poke(("b" + BigInt(i, 16).toString(2)).U)
           dut.clock.step()
         }
+
+        // zero input
+        dut.io.in.poke(("b" + BigInt(zero, 16).toString(2)).U)
+
       }.fork {
         dut.clock.step((WII + 2 - 1) / 2 + WIF + 2 + 1)
 
@@ -389,7 +394,6 @@ class FXPSqrtTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.clock.step()
         }
 
-        dut.io.in.poke(("b" + BigInt(zero, 16).toString(2)).U)
       }.join()
     }
   }
