@@ -11,12 +11,6 @@ class FXPArithmTest extends AnyFlatSpec with ChiselScalatestTester {
   val depth = 128
   val annos = Seq(VerilatorBackendAnnotation)
 
-  behavior.of("tester on fifo with memory")
-  it should "fifo with it" in {
-    test(new Float2FxpPipe)
-      .withAnnotations(annos) { dut => }
-  }
-
   behavior.of("tester on Float2Fxp zoom")
   it should "convert float to fixed point correctly" in {
     test(new Float2Fxp).withAnnotations(annos) { dut =>
@@ -437,6 +431,92 @@ class FXPSqrtTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.clock.step()
         }
 
+      }.join()
+    }
+  }
+}
+
+class FXPFloatTest extends AnyFlatSpec with ChiselScalatestTester {
+  val testInput = Seq(
+    "00201551",
+    "00300010",
+    "009b63b3",
+    "0bb51e68",
+    "0e56e35e",
+    "0432d234",
+    "0bb004db",
+    "09ad79bc",
+    "16de4b61",
+    "166f2bff",
+    "1a164399",
+    "18d9b80a",
+    "16ba294f",
+    "f6360551",
+    "a34728f2",
+    "16b53c9c",
+    "b6b62e8e",
+    "170edf8b",
+    "1e546855",
+    "180a9d44",
+    "f6c772c2",
+    "a2ad7ac4",
+    "00001551",
+    "00000010",
+    "a09b63b3",
+    "8bb51e68",
+    "6e56e35e",
+    "9432d234",
+    "2bb004db",
+    "39ad79bc",
+    "76de4b61",
+    "666f2bff",
+    "7a164399",
+    "68d9b80a",
+    "b6ba294f",
+    "f6360551",
+    "a34728f2",
+    "66b53c9c",
+    "b6b62e8e",
+    "d70edf8b",
+    "6e546855",
+    "680a9d44",
+    "f6c772c2",
+    "a2ad7ac4"
+  )
+
+  val zeroInput = "00000000"
+  val WII = 16
+  val WIF = 16
+  val WOI = 15
+  val WOF = 18
+  val maxUnsignedValue = BigInt(2).pow(WIF + WII)
+  val maxPositiveValue = BigInt(2).pow(WIF + WII - 1)
+
+  val annos = Seq(VerilatorBackendAnnotation)
+  behavior.of("Fxp2floatPipe")
+  it should ("do correctly") in {
+    test(new Fxp2FloatPipe(WII, WIF)).withAnnotations(annos) { dut =>
+      dut.reset.poke(true.B)
+      dut.clock.step()
+      dut.reset.poke(false.B)
+      dut.clock.step()
+
+      fork {
+        for (i <- testInput) {
+          dut.io.in.poke(("b" + BigInt(i, 16).toString(2)).U)
+          dut.clock.step()
+        }
+        dut.io.in.poke(("b" + BigInt(zeroInput, 16).toString(2)).U)
+      }.fork {
+        dut.clock.step(WIF + WII + 3)
+        for (i <- testInput) {
+          val res = java.lang.Float.intBitsToFloat(dut.io.out.peekInt().toInt)
+          val inputTmp = BigInt(i, 16)
+          val actualFloat = (if (inputTmp >= maxPositiveValue) { inputTmp - maxUnsignedValue }
+                             else { inputTmp }).toFloat / (1 << WIF)
+          println(f"input = $actualFloat, output = $res")
+          dut.clock.step()
+        }
       }.join()
     }
   }

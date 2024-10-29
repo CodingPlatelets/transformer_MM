@@ -1,0 +1,119 @@
+VCD info: dumpfile dump.vcd opened for output.
+cycle  0    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle  1    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle  2    fxp1=       32.083267    float2=0x42005544    float3=0x00000000    fxp4=       32.083267        fxp5=        0.000000    
+cycle  3    fxp1=       48.000244    float2=0x42400040    float3=0x00000000    fxp4=       48.000244        fxp5=        0.000000    
+cycle  4    fxp1=      155.389450    float2=0x431b63b3    float3=0x00000000    fxp4=      155.389450        fxp5=        0.000000    
+cycle  5    fxp1=     2997.118774    float2=0x453b51e6    float3=0x00000000    fxp4=     2997.118652        fxp5=        0.000000    
+cycle  6    fxp1=     3670.888153    float2=0x45656e35    float3=0x00000000    fxp4=     3670.887939        fxp5=        0.000000    
+cycle  7    fxp1=     1074.821106    float2=0x44865a46    float3=0x00000000    fxp4=     1074.821045        fxp5=        0.000000    
+cycle  8    fxp1=     2992.018967    float2=0x453b004d    float3=0x00000000    fxp4=     2992.018799        fxp5=        0.000000    
+cycle  9    fxp1=     2477.475525    float2=0x451ad79b    float3=0x00000000    fxp4=     2477.475342        fxp5=        0.000000    
+cycle 10    fxp1=     5854.294449    float2=0x45b6f25b    float3=0x00000000    fxp4=     5854.294434        fxp5=        0.000000    
+cycle 11    fxp1=     5743.171860    float2=0x45b3795f    float3=0x00000000    fxp4=     5743.171387        fxp5=        0.000000    
+cycle 12    fxp1=     6678.264053    float2=0x45d0b21c    float3=0x00000000    fxp4=     6678.263672        fxp5=        0.000000    
+cycle 13    fxp1=     6361.718903    float2=0x45c6cdc0    float3=0x00000000    fxp4=     6361.718750        fxp5=        0.000000    
+cycle 14    fxp1=     5818.161362    float2=0x45b5d14a    float3=0x00000000    fxp4=     5818.161133        fxp5=        0.000000    
+cycle 15    fxp1=    -2505.979233    float2=0xc51c9faa    float3=0x00000000    fxp4=    -2505.979004        fxp5=        0.000000    
+cycle 16    fxp1=   -23736.840057    float2=0xc6b971ae    float3=0x00000000    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 17    fxp1=     5813.236755    float2=0x45b5a9e4    float3=0x00000000    fxp4=     5813.236328        fxp5=        0.000000    
+cycle 18    fxp1=   -18761.818146    float2=0xc69293a2    float3=0x00000000    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 19    fxp1=     5902.873215    float2=0x45b876fc    float3=0x00000000    fxp4=     5902.873047        fxp5=        0.000000    
+cycle 20    fxp1=     7764.407547    float2=0x45f2a342    float3=0x00000000    fxp4=     7764.407227        fxp5=        0.000000    
+cycle 21    fxp1=     6154.614319    float2=0x45c054ea    float3=0x00000000    fxp4=     6154.614258        fxp5=        0.000000    
+cycle 22    fxp1=    -2360.551727    float2=0xc51388d3    float3=0x00000000    fxp4=    -2360.551514        fxp5=        0.000000    
+cycle 23    fxp1=   -23890.520447    float2=0xc6baa50a    float3=0x00000000    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 24    fxp1=        0.083267    float2=0x3daa8800    float3=0x00000000    fxp4=        0.083267        fxp5=        0.000000    
+cycle 25    fxp1=        0.000244    float2=0x39800000    float3=0x00000000    fxp4=        0.000244        fxp5=        0.000000    
+cycle 26    fxp1=   -24420.610550    float2=0xc6bec938    float3=0x00000000    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 27    fxp1=   -29770.881226    float2=0xc6e895c3    float3=0x00000000    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 28    fxp1=    28246.888153    float2=0x46dcadc6    float3=0x00000000    fxp4=    16383.999996 (o)    fxp5=        0.000000    
+cycle 29    fxp1=   -27597.178894    float2=0xc6d79a5b    float3=0x00000000    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 30    fxp1=    11184.018967    float2=0x462ec013    float3=0x00000000    fxp4=    11184.018555        fxp5=        0.000000    
+cycle 31    fxp1=    14765.475525    float2=0x4666b5e6    float3=0x00000000    fxp4=    14765.474609        fxp5=        0.000000    
+cycle 32    fxp1=    30430.294449    float2=0x46edbc96    float3=0x00000000    fxp4=    16383.999996 (o)    fxp5=        0.000000    
+cycle 33    fxp1=    26223.171860    float2=0x46ccde57    float3=0x00000000    fxp4=    16383.999996 (o)    fxp5=        0.000000    
+cycle 34    fxp1=    31254.264053    float2=0x46f42c87    float3=0x00000000    fxp4=    16383.999996 (o)    fxp5=        0.000000    
+cycle 35    fxp1=    26841.718903    float2=0x46d1b370    float3=0x00000000    fxp4=    16383.999996 (o)    fxp5=        0.000000    
+cycle 36    fxp1=   -18757.838638    float2=0xc6928bad    float3=0x42005544    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 37    fxp1=    -2505.979233    float2=0xc51c9faa    float3=0x42400040    fxp4=    -2505.979004        fxp5=        0.000000    
+cycle 38    fxp1=   -23736.840057    float2=0xc6b971ae    float3=0x431b63b3    fxp4=   -16384.000000 (o)    fxp5=        0.000000    
+cycle 39    fxp1=    26293.236755    float2=0x46cd6a79    float3=0x453b51e6    fxp4=    16383.999996 (o)    fxp5=       32.083267    
+cycle 40    fxp1=   -18761.818146    float2=0xc69293a2    float3=0x45656e35    fxp4=   -16384.000000 (o)    fxp5=       48.000244    
+cycle 41    fxp1=   -10481.126785    float2=0xc623c481    float3=0x44865a46    fxp4=   -10481.125977        fxp5=      155.389450    
+cycle 42    fxp1=    28244.407547    float2=0x46dca8d0    float3=0x453b004d    fxp4=    16383.999996 (o)    fxp5=     2997.118652    
+cycle 43    fxp1=    26634.614319    float2=0x46d0153a    float3=0x451ad79b    fxp4=    16383.999996 (o)    fxp5=     3670.887939    
+cycle 44    fxp1=    -2360.551727    float2=0xc51388d3    float3=0x45b6f25b    fxp4=    -2360.551514        fxp5=     1074.821045    
+cycle 45    fxp1=   -23890.520447    float2=0xc6baa50a    float3=0x45b3795f    fxp4=   -16384.000000 (o)    fxp5=     2992.018799    
+cycle 46    fxp1=        0.000000    float2=0x00000000    float3=0x45d0b21c    fxp4=        0.000000        fxp5=     2477.475342    
+cycle 47    fxp1=        0.000000    float2=0x00000000    float3=0x45c6cdc0    fxp4=        0.000000        fxp5=     5854.294434    
+cycle 48    fxp1=        0.000000    float2=0x00000000    float3=0x45b5d14a    fxp4=        0.000000        fxp5=     5743.171387    
+cycle 49    fxp1=        0.000000    float2=0x00000000    float3=0xc51c9faa    fxp4=        0.000000        fxp5=     6678.263672    
+cycle 50    fxp1=        0.000000    float2=0x00000000    float3=0xc6b971ae    fxp4=        0.000000        fxp5=     6361.718750    
+cycle 51    fxp1=        0.000000    float2=0x00000000    float3=0x45b5a9e4    fxp4=        0.000000        fxp5=     5818.161133    
+cycle 52    fxp1=        0.000000    float2=0x00000000    float3=0xc69293a2    fxp4=        0.000000        fxp5=    -2505.979004    
+cycle 53    fxp1=        0.000000    float2=0x00000000    float3=0x45b876fc    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 54    fxp1=        0.000000    float2=0x00000000    float3=0x45f2a342    fxp4=        0.000000        fxp5=     5813.236328    
+cycle 55    fxp1=        0.000000    float2=0x00000000    float3=0x45c054ea    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 56    fxp1=        0.000000    float2=0x00000000    float3=0xc51388d3    fxp4=        0.000000        fxp5=     5902.873047    
+cycle 57    fxp1=        0.000000    float2=0x00000000    float3=0xc6baa50a    fxp4=        0.000000        fxp5=     7764.407227    
+cycle 58    fxp1=        0.000000    float2=0x00000000    float3=0x3daa8800    fxp4=        0.000000        fxp5=     6154.614258    
+cycle 59    fxp1=        0.000000    float2=0x00000000    float3=0x39800000    fxp4=        0.000000        fxp5=    -2360.551514    
+cycle 60    fxp1=        0.000000    float2=0x00000000    float3=0xc6bec938    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 61    fxp1=        0.000000    float2=0x00000000    float3=0xc6e895c3    fxp4=        0.000000        fxp5=        0.083267    
+cycle 62    fxp1=        0.000000    float2=0x00000000    float3=0x46dcadc6    fxp4=        0.000000        fxp5=        0.000244    
+cycle 63    fxp1=        0.000000    float2=0x00000000    float3=0xc6d79a5b    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 64    fxp1=        0.000000    float2=0x00000000    float3=0x462ec013    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 65    fxp1=        0.000000    float2=0x00000000    float3=0x4666b5e6    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 66    fxp1=        0.000000    float2=0x00000000    float3=0x46edbc96    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 67    fxp1=        0.000000    float2=0x00000000    float3=0x46ccde57    fxp4=        0.000000        fxp5=    11184.018555    
+cycle 68    fxp1=        0.000000    float2=0x00000000    float3=0x46f42c87    fxp4=        0.000000        fxp5=    14765.474609    
+cycle 69    fxp1=        0.000000    float2=0x00000000    float3=0x46d1b370    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 70    fxp1=        0.000000    float2=0x00000000    float3=0xc6928bad    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 71    fxp1=        0.000000    float2=0x00000000    float3=0xc51c9faa    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 72    fxp1=        0.000000    float2=0x00000000    float3=0xc6b971ae    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 73    fxp1=        0.000000    float2=0x00000000    float3=0x46cd6a79    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 74    fxp1=        0.000000    float2=0x00000000    float3=0xc69293a2    fxp4=        0.000000        fxp5=    -2505.979004    
+cycle 75    fxp1=        0.000000    float2=0x00000000    float3=0xc623c481    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 76    fxp1=        0.000000    float2=0x00000000    float3=0x46dca8d0    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 77    fxp1=        0.000000    float2=0x00000000    float3=0x46d0153a    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 78    fxp1=        0.000000    float2=0x00000000    float3=0xc51388d3    fxp4=        0.000000        fxp5=   -10481.125977    
+cycle 79    fxp1=        0.000000    float2=0x00000000    float3=0xc6baa50a    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 80    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=    16383.999996 (o)
+cycle 81    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=    -2360.551514    
+cycle 82    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=   -16384.000000 (o)
+cycle 83    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 84    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 85    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 86    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 87    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 88    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 89    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 90    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 91    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 92    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 93    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 94    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 95    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 96    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 97    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 98    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle 99    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle100    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle101    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle102    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle103    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle104    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle105    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle106    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle107    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle108    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle109    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle110    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle111    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle112    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle113    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle114    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle115    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle116    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    
+cycle117    fxp1=        0.000000    float2=0x00000000    float3=0x00000000    fxp4=        0.000000        fxp5=        0.000000    

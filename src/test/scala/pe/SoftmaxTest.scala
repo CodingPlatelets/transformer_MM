@@ -5,6 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import fixedpoint._
 import java.io._
+import pe.utils.FixedPointExp
 import pe.configs.SdpmmConfigs
 import os.write
 
@@ -43,7 +44,7 @@ class SoftmaxTest extends AnyFlatSpec with ChiselScalatestTester {
           // writer.write(f"$value%.4f,$computedValue%.8f,$actualValue%.8f,$relativeError%.4f\n")
         }
 
-        // writer.close()
+      // writer.close()
       }
   }
 

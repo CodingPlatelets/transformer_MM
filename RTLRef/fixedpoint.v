@@ -1012,7 +1012,7 @@ always @ (posedge clk or negedge rstn)
             valo <= 24'hFFFFFF;
         end else if(exp[0]==10'd0 || ~vall[23]) begin
             expo <= 8'd0;
-            valo <= 0;
+            vao <= 0;
         end else begin
             expo <= exp[0][7:0];
             valo <= vall;

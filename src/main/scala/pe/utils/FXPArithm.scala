@@ -21,14 +21,13 @@ class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int
   val outi = Reg(UInt(WOI.W))
   val overflow = RegInit(false.B)
 
-  val tempInr = io.in(WII + WIF - 1, (WIF - WOF).abs)
-
   // BP flow
   if (WOF > WIF) {
     inr := Cat(io.in, Fill(WOF - WIF, 0.U))
   } else if (WOF == WIF || !ROUND) {
-    inr := tempInr
+    inr := io.in(WII + WIF - 1, 0)
   } else {
+    val tempInr = io.in(WII + WIF - 1, (WIF - WOF).abs)
     if (WII + WOF >= 2) {
       when(io.in(WIF - WOF - 1) && ~(~tempInr(WII + WOF - 1) && (tempInr(WII + WOF - 2, 0).andR))) {
         inr := tempInr +& 1.U
@@ -70,9 +69,6 @@ class FxpZoom(val WII: Int = 8, val WIF: Int = 8, val WOI: Int = 8, val WOF: Int
   io.out := Cat(outi, outf)
   io.overflow := overflow
 
-  debugLog(
-    p"in: ${io.in}, inr: ${inr}, ini: ${ini}, outf: ${outf}, outi: ${outi}, overflow: ${overflow}, tempInr: ${tempInr}\n"
-  )
 }
 
 class Fxp2Float(val WII: Int = 8, val WIF: Int = 8) extends Module {
@@ -122,81 +118,62 @@ class Fxp2Float(val WII: Int = 8, val WIF: Int = 8) extends Module {
 
 class Fxp2FloatPipe(val WII: Int = 8, val WIF: Int = 8) extends Module with DebugLog {
   val io = IO(new Bundle {
-    val rstn = Input(Bool())
-    val clk = Input(Clock())
     val in = Input(UInt((WII + WIF).W))
     val out = Output(UInt(32.W))
   })
 
   val ONEI = 1.U((WII + WIF).W)
 
-  val sign = Reg(Vec(WII + WIF + 1, Bool()))
-  val exp = Reg(Vec(WII + WIF + 1, SInt(10.W)))
-  val inu = Reg(Vec(WII + WIF + 1, UInt((WII + WIF).W)))
+  val signPipe = RegInit(VecInit.fill(WII + WIF + 1)(false.B))
+  val expPipe = RegInit(VecInit.fill(WII + WIF + 1)(0.U(10.W)))
+  val inuPipe = RegInit(VecInit.fill(WII + WIF + 1)(0.U((WII + WIF).W)))
 
   val vall = RegInit(0.U(24.W))
   val valo = RegInit(0.U(24.W))
   val expo = RegInit(0.U(8.W))
   val signo = RegInit(false.B)
 
-  io.out := Cat(signo, expo, valo(22, 0))
+  // init
+  val inputSign = io.in.asSInt
+  signPipe(WII + WIF) := inputSign < 0.S
+  expPipe(WII + WIF) := (WII + 127 - 1).U
+  inuPipe(WII + WIF) := Mux(inputSign < 0.S, (-inputSign).asUInt, inputSign.asUInt)
 
-  for (ii <- 0 until WII + WIF + 1) {
-    sign(ii) := false.B
-    exp(ii) := 0.S
-    inu(ii) := 0.U
-  }
-
-  when(!io.rstn) {
-    for (ii <- 0 until WII + WIF + 1) {
-      sign(ii) := false.B
-      exp(ii) := 0.S
-      inu(ii) := 0.U
-    }
-  }.otherwise {
-    sign(WII + WIF) := io.in(WII + WIF - 1)
-    exp(WII + WIF) := (WII + 127 - 1).S
-    inu(WII + WIF) := Mux(io.in(WII + WIF - 1), (~io.in) + ONEI, io.in)
-    for (ii <- (WII + WIF - 1) to 0 by -1) {
-      sign(ii) := sign(ii + 1)
-      when(inu(ii + 1)(WII + WIF - 1)) {
-        exp(ii) := exp(ii + 1)
-        inu(ii) := inu(ii + 1)
+  // pipeline stages
+  for (ii <- (WII + WIF - 1) to 0 by -1) {
+    signPipe(ii) := signPipe(ii + 1)
+    when(inuPipe(ii + 1)(WII + WIF - 1)) {
+      expPipe(ii) := expPipe(ii + 1)
+      inuPipe(ii) := inuPipe(ii + 1)
+    }.otherwise {
+      when(expPipe(ii + 1) =/= 0.U) {
+        expPipe(ii) := expPipe(ii + 1) - 1.U
       }.otherwise {
-        when(exp(ii + 1) =/= 0.S) {
-          exp(ii) := exp(ii + 1) - 1.S
-        }.otherwise {
-          exp(ii) := exp(ii + 1)
-        }
-        inu(ii) := inu(ii + 1) << 1
+        expPipe(ii) := expPipe(ii + 1)
       }
+      inuPipe(ii) := inuPipe(ii + 1) << 1
     }
   }
 
   if (23 > WII + WIF - 1) {
-    vall := 0.U
-    vall := inu(0)
+    vall := inuPipe(0) ## 0.U
   } else {
-    vall := inu(0)(WII + WIF - 1, WII + WIF - 1 - 23)
+    vall := inuPipe(0)(WII + WIF - 1, WII + WIF - 1 - 23)
   }
 
-  when(!io.rstn) {
-    signo := false.B
+  signo := signPipe(0)
+  when(expPipe(0) >= 255.U) {
+    expo := 255.U
+    valo := "hFFFFFF".U
+  }.elsewhen(expPipe(0) === 0.U || !vall(23)) {
     expo := 0.U
     valo := 0.U
   }.otherwise {
-    signo := sign(0)
-    when(exp(0) >= 255.S) {
-      expo := 255.U
-      valo := "hFFFFFF".U
-    }.elsewhen(exp(0) === 0.S || !vall(23)) {
-      expo := 0.U
-      valo := 0.U
-    }.otherwise {
-      expo := exp(0)(7, 0).asUInt
-      valo := vall
-    }
+    expo := expPipe(0)(7, 0).asUInt
+    valo := vall
   }
+
+  io.out := Cat(signo, expo, valo(22, 0))
 }
 
 // test pass

@@ -1,8 +1,8 @@
-package pe
+package pe.utils
 
 import chisel3._
 import chisel3.util._
-import configs.SdpmmConfigs
+import pe.configs.SdpmmConfigs
 import pe.utils.DebugLog
 import fixedpoint._
 import pe.utils.PipeValue
