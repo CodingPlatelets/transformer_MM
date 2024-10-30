@@ -18,8 +18,8 @@ class AverageModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
         val testData = Seq(
           "00000100_00000000", // 4.0
           "00001000_00000000", // 8.0
-          "00010000_00000000", // 12.0
-          "00100000_00000000" // 16.0
+          "00010000_00000000", // 16.0
+          "00100000_00000000" // 32.0
         )
 
         val cyclesNeeded = log2Ceil(dut.ArraySize) * 2 + dut.WOI + dut.WOF + 5 + 1
@@ -43,7 +43,7 @@ class AverageModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
           while (!dut.io.out.valid.peekBoolean()) {
             dut.clock.step(1)
           }
-          dut.io.out.bits.expect("b0000_1010_0000_0000".U) // 10.0 in 8.8 fixed-point
+          dut.io.out.bits.expect("b0000_1111_0000_0000".U) // 15.0 in 8.8 fixed-point
         }.join()
       }
   }
