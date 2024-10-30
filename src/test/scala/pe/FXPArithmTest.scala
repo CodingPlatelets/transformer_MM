@@ -53,39 +53,62 @@ class FXPArithmTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
+      dut.io.in.valid.poke(false.B)
 
       fork {
         // Test case 1: Carrier case
-        dut.io.in.poke("b00000000_11111111".U) // 8-bit integer part and 8-bit fractional part
+        dut.io.in.bits.poke("b00000000_11111111".U) // 8-bit integer part and 8-bit fractional part
+        dut.io.in.valid.poke(true.B)
         dut.clock.step()
 
         // Test case 2: Round case
-        dut.io.in.poke("b11111111_11111111".U) // Maximum value
+        dut.io.in.bits.poke("b11111111_11111111".U) // Maximum value
+        dut.io.in.valid.poke(true.B)
+        dut.clock.step()
+        dut.io.in.valid.poke(false.B)
         dut.clock.step()
 
         // Test case 3: normal case
-        dut.io.in.poke("b00000000_10000001".U) // Value that should cause rounding
+        dut.io.in.bits.poke("b00000000_10000001".U) // Value that should cause rounding
+        dut.io.in.valid.poke(true.B)
         dut.clock.step()
 
         // Test case 4: overflow
-        dut.io.in.poke("b10000000_10000000".U) // Negative value
+        dut.io.in.bits.poke("b10000000_10000000".U) // Negative value
+        dut.io.in.valid.poke(true.B)
         dut.clock.step()
+
+        dut.io.in.valid.poke(false.B)
       }.fork {
-        dut.clock.step(2)
-        dut.io.out.expect("b0000001_00000".U)
-        dut.io.overflow.expect(false.B)
+        dut.clock.step(dut.zoomLatency)
+        dut.io.out.bits.expect("b0000001_00000".U)
+        dut.io.overflow.bits.expect(false.B)
+        dut.io.out.valid.expect(true.B)
+        dut.io.overflow.valid.expect(true.B)
 
         dut.clock.step()
-        dut.io.out.expect("b000000_00000".U)
-        dut.io.overflow.expect(false.B)
+        dut.io.out.bits.expect("b000000_00000".U)
+        dut.io.overflow.bits.expect(false.B)
+        dut.io.out.valid.expect(true.B)
+        dut.io.overflow.valid.expect(true.B)
 
         dut.clock.step()
-        dut.io.out.expect("b0000000_10000".U)
-        dut.io.overflow.expect(false.B)
+        dut.io.out.valid.expect(false.B)
+        dut.clock.step()
+        dut.io.out.bits.expect("b0000000_10000".U)
+        dut.io.overflow.bits.expect(false.B)
+        dut.io.out.valid.expect(true.B)
+        dut.io.overflow.valid.expect(true.B)
 
         dut.clock.step()
-        dut.io.out.expect("b1000000_00000".U)
-        dut.io.overflow.expect(true.B)
+        dut.io.out.bits.expect("b1000000_00000".U)
+        dut.io.overflow.bits.expect(true.B)
+        dut.io.out.valid.expect(true.B)
+        dut.io.overflow.valid.expect(true.B)
+
+        dut.clock.step()
+        dut.io.out.valid.expect(false.B)
+        dut.io.overflow.valid.expect(false.B)
       }.join()
     }
   }
@@ -96,80 +119,107 @@ class FXPArithmTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
+      dut.io.in.valid.poke(false.B)
 
       fork {
         // Test case 1: Carrier case
-        dut.io.in.poke("b00000000_11111111".U) // 8-bit integer part and 8-bit fractional part
+        dut.io.in.bits.poke("b00000000_11111111".U) // 8-bit integer part and 8-bit fractional part
+        dut.io.in.valid.poke(true.B)
         dut.clock.step()
 
         // Test case 2: Round case
-        dut.io.in.poke("b11111111_11111111".U) // Maximum value
+        dut.io.in.bits.poke("b11111111_11111111".U) // Maximum value
+        dut.io.in.valid.poke(true.B)
         dut.clock.step()
 
         // Test case 3: normal case
-        dut.io.in.poke("b00000000_10000001".U) // Value that should cause rounding
+        dut.io.in.bits.poke("b00000000_10000001".U) // Value that should cause rounding
+        dut.io.in.valid.poke(true.B)
         dut.clock.step()
 
         // Test case 4: overflow
-        dut.io.in.poke("b10000000_10000000".U) // Negative value
+        dut.io.in.bits.poke("b10000000_10000000".U) // Negative value
+        dut.io.in.valid.poke(true.B)
         dut.clock.step()
+
+        dut.io.in.valid.poke(false.B)
       }.fork {
-        dut.clock.step(2)
-        dut.io.out.expect("b00000000_111111110".U)
-        dut.io.overflow.expect(false.B)
+        dut.clock.step(dut.zoomLatency)
+        dut.io.out.bits.expect("b00000000_111111110".U)
+        dut.io.overflow.bits.expect(false.B)
 
         dut.clock.step()
-        dut.io.out.expect("b11111111_111111110".U)
-        dut.io.overflow.expect(false.B)
+        dut.io.out.bits.expect("b11111111_111111110".U)
+        dut.io.overflow.bits.expect(false.B)
 
         dut.clock.step()
-        dut.io.out.expect("b0000000_100000010".U)
-        dut.io.overflow.expect(false.B)
+        dut.io.out.bits.expect("b0000000_100000010".U)
+        dut.io.overflow.bits.expect(false.B)
 
         dut.clock.step()
-        dut.io.out.expect("b10000000_100000000".U)
-        dut.io.overflow.expect(false.B)
+        dut.io.out.bits.expect("b10000000_100000000".U)
+        dut.io.overflow.bits.expect(false.B)
+
+        dut.clock.step()
+        dut.io.out.valid.expect(false.B)
+        dut.io.overflow.valid.expect(false.B)
       }.join()
     }
   }
 
-  behavior.of("FxpAddSub")
-  it should ("do add and sub correctly") in {
-    test(new FxpAddSub(8, 8, 6, 5, 7, 7, true)).withAnnotations(annos) { dut =>
+  behavior.of("FxpAdd")
+  it should ("do add correctly") in {
+    test(new FxpAdd(8, 8, 6, 5, 7, 7, true)).withAnnotations(annos) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
+      dut.io.ina.valid.poke(false.B)
+      dut.io.inb.valid.poke(false.B)
 
       fork {
         // Test case 1: Carrier case
-        dut.io.ina.poke("b00000000_11111111".U)
-        dut.io.inb.poke("b000000_11111".U)
-        dut.io.sub.poke(common.AddOrSub.ADD)
+        dut.io.ina.bits.poke("b00000000_11111111".U)
+        dut.io.inb.bits.poke("b000000_11111".U)
+        dut.io.ina.valid.poke(true.B)
+        dut.io.inb.valid.poke(true.B)
         dut.clock.step()
 
         // Test case 2: Round case
-        dut.io.ina.poke("b11111111_11111111".U) // Maximum value
-        dut.io.inb.poke("b111111_11111".U) // Maximum value
-        dut.io.sub.poke(common.AddOrSub.SUB)
+        dut.io.ina.bits.poke("b11111111_11111111".U) // Maximum value
+        dut.io.inb.bits.poke("b111111_11111".U) // Maximum value
+        dut.io.ina.valid.poke(true.B)
+        dut.io.inb.valid.poke(true.B)
         dut.clock.step()
 
         // Test case 3: overflow
-        dut.io.ina.poke("b10000000_10000000".U) // Negative value
-        dut.io.inb.poke("b100100_10000".U) // Negative value
-        dut.io.sub.poke(common.AddOrSub.ADD)
+        dut.io.ina.bits.poke("b10000000_10000000".U) // Negative value
+        dut.io.inb.bits.poke("b100100_10000".U) // Negative value
+        dut.io.ina.valid.poke(true.B)
+        dut.io.inb.valid.poke(true.B)
         dut.clock.step()
+
+        dut.io.ina.valid.poke(false.B)
       }.fork {
         dut.clock.step(2)
-        dut.io.out.expect("b0000001_1111100".U)
-        dut.io.overflow.expect(false.B)
+        dut.io.out.bits.expect("b0000001_1111100".U)
+        dut.io.overflow.bits.expect(false.B)
+        dut.io.out.valid.expect(true.B)
+        dut.io.overflow.valid.expect(true.B)
 
         dut.clock.step()
-        dut.io.out.expect("b0000000_0000100".U)
-        dut.io.overflow.expect(false.B)
+        dut.io.out.bits.expect("b11111111111100".U)
+        dut.io.overflow.bits.expect(false.B)
+        dut.io.out.valid.expect(true.B)
+        dut.io.overflow.valid.expect(true.B)
 
         dut.clock.step()
-        dut.io.out.expect("b1000000_0000000".U)
-        dut.io.overflow.expect(true.B)
+        dut.io.out.bits.expect("b1000000_0000000".U)
+        dut.io.overflow.bits.expect(true.B)
+        dut.io.out.valid.expect(true.B)
+        dut.io.overflow.valid.expect(true.B)
+        dut.clock.step()
+        dut.io.out.valid.expect(false.B)
+        dut.io.overflow.valid.expect(false.B)
       }.join()
     }
   }
@@ -259,10 +309,14 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
 
       fork {
         for ((a, b) <- testInput) {
-          dut.io.ina.poke(("b" + hex2Bin(a)).U)
-          dut.io.inb.poke(("b" + hex2Bin(b)).U)
+          dut.io.ina.bits.poke(("b" + hex2Bin(a)).U)
+          dut.io.inb.bits.poke(("b" + hex2Bin(b)).U)
+          dut.io.ina.valid.poke(true.B)
+          dut.io.inb.valid.poke(true.B)
           dut.clock.step()
         }
+        dut.io.ina.valid.poke(false.B)
+        dut.io.inb.valid.poke(false.B)
       }.fork {
         dut.clock.step(2)
         for ((a, b) <- testInput) {
@@ -272,19 +326,21 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
           var bInt = hex2SignedInt(b, WIIB + WIFB).toDouble / (1 << WIFB)
           var abmul = aInt * bInt
 
-          val resTmp = dut.io.out.peekInt()
+          val resTmp = dut.io.out.bits.peekInt()
           var res = (if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
                      else { resTmp }).toDouble / (1 << WOF)
-          var over = dut.io.overflow.peekBoolean()
+          var over = dut.io.overflow.bits.peekBoolean()
+          dut.io.out.valid.expect(true.B)
+          dut.io.overflow.valid.expect(true.B)
 
           println(f"a= $aInt%16f, b= $bInt%16f, a*b= $abmul%16f ($over%s)\t omul= $res%16f")
 
           dut.clock.step()
         }
 
-        dut.io.ina.poke(BigInt(zeroTuple._1, 16).U)
-        dut.io.ina.poke(BigInt(zeroTuple._2, 16).U)
         dut.clock.step(WOI + WOF + 8)
+        dut.io.out.valid.expect(false.B)
+        dut.io.overflow.valid.expect(false.B)
       }.join()
 
     }
@@ -296,17 +352,23 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step()
       dut.reset.poke(false.B)
       dut.clock.step()
+      dut.io.dividend.valid.poke(false.B)
+      dut.io.divisor.valid.poke(false.B)
 
       fork {
         for ((a, b) <- testInput) {
-          dut.io.dividend.poke(("b" + hex2Bin(a)).U)
-          dut.io.divisor.poke(("b" + hex2Bin(b)).U)
+          dut.io.dividend.bits.poke(("b" + hex2Bin(a)).U)
+          dut.io.divisor.bits.poke(("b" + hex2Bin(b)).U)
+          dut.io.dividend.valid.poke(true.B)
+          dut.io.divisor.valid.poke(true.B)
           dut.clock.step()
         }
 
-        dut.io.dividend.poke(BigInt(zeroTuple._1, 16).U)
-        dut.io.divisor.poke(BigInt(zeroTuple._2, 16).U)
+        dut.io.dividend.valid.poke(false.B)
+        dut.io.divisor.valid.poke(false.B)
       }.fork {
+        dut.io.out.valid.expect(false.B)
+        dut.io.overflow.valid.expect(false.B)
         dut.clock.step(WOI + WOF + 5)
         for ((a, b) <- testInput) {
           val maxUnsignedValue = BigInt(2).pow(WOF + WOI)
@@ -315,17 +377,23 @@ class FXPMulDivTest extends AnyFlatSpec with ChiselScalatestTester {
           var bInt = hex2SignedInt(b, WIIB + WIFB).toDouble / (1 << WIFB)
           var abdiv = aInt / bInt
 
-          val resTmp = dut.io.out.peekInt()
+          dut.io.out.valid.expect(true.B)
+          dut.io.overflow.valid.expect(true.B)
+          val resTmp = dut.io.out.bits.peekInt()
           var res = (if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
                      else { resTmp }).toDouble / (1 << WOF)
-          var over = dut.io.overflow.peekBoolean()
+          var over = dut.io.overflow.bits.peekBoolean()
 
           println(f"a= $aInt%16f, b= $bInt%16f, a/b= $abdiv%16f ($over%s)\t odiv= $res%16f")
 
           dut.clock.step()
         }
 
-        dut.clock.step(WOI + WOF + 8)
+        for (i <- 0 until WOI + WOF + 8) {
+          dut.clock.step()
+          dut.io.out.valid.expect(false.B)
+          dut.io.overflow.valid.expect(false.B)
+        }
       }.join()
 
     }
@@ -404,33 +472,37 @@ class FXPSqrtTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step()
       dut.reset.poke(false.B)
       dut.clock.step()
+      dut.io.in.valid.poke(false.B)
 
       fork {
         for (i <- values) {
-          dut.io.in.poke(("b" + BigInt(i, 16).toString(2)).U)
+          dut.io.in.bits.poke(("b" + BigInt(i, 16).toString(2)).U)
+          dut.io.in.valid.poke(true.B)
           dut.clock.step()
         }
 
         // zero input
-        dut.io.in.poke(("b" + BigInt(zero, 16).toString(2)).U)
+        dut.io.in.valid.poke(false.B)
 
       }.fork {
         dut.clock.step((WII + 2 - 1) / 2 + WIF + 2 + 1)
 
         for (i <- values) {
 
-          val resTmp = dut.io.out.peekInt()
+          val resTmp = dut.io.out.bits.peekInt()
           val res = (if (resTmp >= maxPositiveValue) { resTmp - maxUnsignedValue }
                      else { resTmp }).toDouble / (1 << WOF)
           val res2 = math.pow(res, 2)
           val input = hex2SignedInt(i, WII + WIF).toDouble / (1 << WIF)
-          val over = if (dut.io.overflow.peekBoolean()) { "(O)" }
+          val over = if (dut.io.overflow.bits.peekBoolean()) { "(O)" }
           else { "( )" }
 
           println(f"input = $input%16f,\t output = $res%12f $over, output^2 = $res2%12f")
           dut.clock.step()
         }
 
+        dut.io.out.valid.expect(false.B)
+        dut.io.overflow.valid.expect(false.B)
       }.join()
     }
   }
@@ -500,23 +572,28 @@ class FXPFloatTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step()
       dut.reset.poke(false.B)
       dut.clock.step()
+      dut.io.in.valid.poke(false.B)
 
       fork {
         for (i <- testInput) {
-          dut.io.in.poke(("b" + BigInt(i, 16).toString(2)).U)
+          dut.io.in.bits.poke(("b" + BigInt(i, 16).toString(2)).U)
+          dut.io.in.valid.poke(true.B)
           dut.clock.step()
         }
-        dut.io.in.poke(("b" + BigInt(zeroInput, 16).toString(2)).U)
+        dut.io.in.valid.poke(false.B)
       }.fork {
-        dut.clock.step(WIF + WII + 3)
+        dut.clock.step(WIF + WII + 2)
         for (i <- testInput) {
-          val res = java.lang.Float.intBitsToFloat(dut.io.out.peekInt().toInt)
+          val res = dut.io.out.bits.peekInt().toString(16)
+          val resValue = java.lang.Float.intBitsToFloat(dut.io.out.bits.peekInt().toInt)
           val inputTmp = BigInt(i, 16)
+          dut.io.out.valid.expect(true.B)
           val actualFloat = (if (inputTmp >= maxPositiveValue) { inputTmp - maxUnsignedValue }
                              else { inputTmp }).toFloat / (1 << WIF)
-          println(f"input = $actualFloat, output = $res")
+          println(f"input = $actualFloat,\t outputStr = $res,\t output = $resValue")
           dut.clock.step()
         }
+        dut.io.out.valid.expect(false.B)
       }.join()
     }
   }

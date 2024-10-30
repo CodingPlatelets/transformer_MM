@@ -2,7 +2,7 @@ package pe.utils
 
 import chisel3._
 import chisel3.util._
-import common.AddOrSub
+import pe.utils.FxpAdd
 import svsim.Simulation.Command.Log
 
 // will calculate the average of the input array for fixed-point number
@@ -22,11 +22,10 @@ class AverageModule(
 
   // 加法器实例
   def fxpAdder(a: UInt, b: UInt): UInt = {
-    val adder = Module(new FxpAddSub(WII, WIF, WII, WIF, WII + log2Ceil(ArraySize), WIF))
+    val adder = Module(new FxpAdd(WII, WIF, WII, WIF, WII + log2Ceil(ArraySize), WIF))
     adder.io.ina := a
     adder.io.inb := b
-    adder.io.sub := AddOrSub.ADD
-    adder.io.out
+    adder.io.out.bits
   }
 
   // 使用 Vec.reduceTree 进行并行累加
