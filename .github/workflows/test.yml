@@ -25,7 +25,7 @@ jobs:
       - name: Setup Scala
         uses: coursier/setup-action@v1
         with:
-          jvm: java-oracle:17
+          jvm: java-oracle:21
           apps: sbt 
       - name: Setup Dependencies
         run: |
