@@ -48,32 +48,6 @@ class AverageModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
       }
   }
 
-  // it should "handle overflow correctly" in {
-  //   test(new AverageModule(WII = 8, WIF = 8, WOI = 8, WOF = 8, ArraySize = 4))
-  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
-  //     // 测试数据 (故意设置大数以触发溢出)
-  //     val testData = Seq.fill(4)(BigInt("7F00000000000000", 2)) // 127.0 (最大正数)
-
-  //     val cyclesNeeded = log2Ceil(4)
-
-  //     fork {
-  //       // 设置输入
-  //       dut.io.in.valid.poke(true.B)
-  //       testData.zipWithIndex.foreach { case (value, index) =>
-  //         dut.io.in.bits(index).poke(value.U)
-  //       }
-  //       dut.clock.step(1)
-  //       dut.io.in.valid.poke(false.B)
-  //     }.fork {
-  //       // 等待所需的周期数
-  //       dut.clock.step(cyclesNeeded)
-  //       // 检查结果
-  //       dut.io.out.valid.expect(true.B)
-  //       dut.io.out.bits.expect(BigInt("FFFF", 16).U) // 预期溢出，返回最大值
-  //     }.join()
-  //   }
-  // }
-
   // it should "handle multiple calculations correctly" in {
   //   test(new AverageModule(WII = 8, WIF = 8, WOI = 8, WOF = 8, ArraySize = 4))
   //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>

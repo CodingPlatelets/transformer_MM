@@ -29,7 +29,7 @@ class AverageModule(
   }
 
   // storage the input vec
-  val nums = VecInit(io.in.bits.map(num => Pipe(io.in.valid, num)))
+  val nums = VecInit(io.in.bits.map(num => Pipe(io.in.valid, num, 0)))
 
   val sumTree = nums.reduceTree { (a, b) =>
     fxpAdder(a, b)
