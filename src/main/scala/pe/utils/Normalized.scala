@@ -44,3 +44,75 @@ class AverageModule(
   io.out <> divider.io.out
 
 }
+
+// calculate the standard deviation of the input array
+// **attention**: the input IO is a Decoupled, which means you should storage the input when using this module until the input is ready
+class StandardDeviationModule(
+  val WII:       Int = 8,
+  val WIF:       Int = 8,
+  val WOI:       Int = 8,
+  val WOF:       Int = 8,
+  val ArraySize: Int = 16)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val in = Flipped(Decoupled(Vec(ArraySize, UInt((WII + WIF).W))))
+    val out = Valid(UInt((WOI + WOF).W))
+  })
+
+  // do average
+  val averageModule = Module(new AverageModule(WII, WIF, WII, WIF, ArraySize))
+  averageModule.io.in <> Pipe(io.in.fire, io.in.bits, 0)
+  val average = averageModule.io.out
+
+  val subAverage = Pipe(average.valid, Mux(average.bits.head(1) === 0.U, ~average.bits + 1.U, average.bits), 0)
+
+  // do substract the average
+  // first, we should storage the input array to wait for the average
+  val nums = RegInit(VecInit.fill(ArraySize)(0.U((WII + WIF).W)))
+  nums := Mux(io.in.fire, io.in.bits, nums)
+  val subNums = nums.map(num => {
+    val subModule = Module(new FxpAdd(WII, WIF, WII, WIF, WII, WIF))
+    subModule.io.ina <> Pipe(subAverage.valid, num, 0)
+    subModule.io.inb <> subAverage
+    subModule.io.out
+  })
+
+  // do square
+  val squareNums = subNums.map(num => {
+    val mulModule = Module(new FxpMul(WII, WIF, WII, WIF, 2 * WII, 2 * WIF))
+    mulModule.io.ina <> num
+    mulModule.io.inb <> num
+    mulModule.io.out
+  })
+
+  // do average
+  val averageSquare = Module(new AverageModule(2 * WII, 2 * WIF, 2 * WII, 2 * WIF, ArraySize))
+  averageSquare.io.in <> Pipe(squareNums.map(_.valid).reduce(_ & _), VecInit(squareNums.map(_.bits)), 0)
+  val averageSquareValue = averageSquare.io.out
+
+  // do sqrt
+  val sqrtModule = Module(new FxpSqrt(2 * WII, 2 * WIF, WOI, WOF))
+  sqrtModule.io.in <> averageSquareValue
+  io.out <> sqrtModule.io.out
+
+  val sdReady = RegInit(true.B)
+  io.in.ready := sdReady
+  // when the io.in.valid is high, set the sdReady to false, and until the averageModule.io.out.valid is high, reset the sdReady to true
+  val state = RegInit(0.U(2.W))
+  switch(state) {
+    is(0.U) {
+      sdReady := true.B
+      when(io.in.fire) {
+        state := 1.U
+        sdReady := false.B
+      }
+    }
+    is(1.U) {
+      when(subAverage.valid) {
+        state := 0.U
+        sdReady := true.B
+      }
+    }
+  }
+}

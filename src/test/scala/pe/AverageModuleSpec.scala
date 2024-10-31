@@ -44,6 +44,8 @@ class AverageModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
             dut.clock.step(1)
           }
           dut.io.out.bits.expect("b0000_1111_0000_0000".U) // 15.0 in 8.8 fixed-point
+          dut.clock.step(1)
+          dut.io.out.valid.expect(false.B)
         }.join()
       }
   }
@@ -51,35 +53,43 @@ class AverageModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
   // it should "handle multiple calculations correctly" in {
   //   test(new AverageModule(WII = 8, WIF = 8, WOI = 8, WOF = 8, ArraySize = 4))
   //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
-  //     // 定义多组测试数据
-  //     val testSets = Seq(
-  //       Seq(BigInt("0100000000000000", 2), BigInt("0200000000000000", 2), BigInt("0300000000000000", 2), BigInt("0400000000000000", 2)), // 平均值 10.0
-  //       Seq(BigInt("0800000000000000", 2), BigInt("1000000000000000", 2), BigInt("1800000000000000", 2), BigInt("2000000000000000", 2))  // 平均值 40.0
-  //     )
+  //       // 定义多组测试数据
+  //       val testSets = Seq(
+  //         Seq(
+  //           BigInt("00000001_")
+  //         ), // 平均值 10.0
+  //         Seq(
+  //           BigInt("0800000000000000", 2),
+  //           BigInt("1000000000000000", 2),
+  //           BigInt("1800000000000000", 2),
+  //           BigInt("2000000000000000", 2)
+  //         ) // 平均值 40.0
+  //       )
 
-  //     val expectedResults = Seq(BigInt("0A00", 16), BigInt("2800", 16)) // 10.0 和 40.0 的 8.8 定点表示
+  //       val expectedResults = Seq(BigInt("0A00", 16), BigInt("2800", 16)) // 10.0 和 40.0 的 8.8 定点表示
 
-  //     val cyclesNeeded = log2Ceil(4)
+  //       val cyclesNeeded = log2Ceil(4)
 
-  //     fork {
-  //       for (testSet <- testSets) {
-  //         // 设置输入
-  //         dut.io.in.valid.poke(true.B)
-  //         testSet.zipWithIndex.foreach { case (value, index) =>
-  //           dut.io.in.bits(index).poke(value.U)
+  //       fork {
+  //         for (testSet <- testSets) {
+  //           // 设置输入
+  //           dut.io.in.valid.poke(true.B)
+  //           testSet.zipWithIndex.foreach {
+  //             case (value, index) =>
+  //               dut.io.in.bits(index).poke(value.U)
+  //           }
+  //           dut.clock.step(1)
+  //           dut.io.in.valid.poke(false.B)
+  //           dut.clock.step(cyclesNeeded)
   //         }
-  //         dut.clock.step(1)
-  //         dut.io.in.valid.poke(false.B)
-  //         dut.clock.step(cyclesNeeded)
-  //       }
-  //     }.fork {
-  //       for (expected <- expectedResults) {
-  //         dut.clock.step(cyclesNeeded)
-  //         dut.io.out.valid.expect(true.B)
-  //         dut.io.out.bits.expect(expected.U)
-  //         dut.clock.step(1)
-  //       }
-  //     }.join()
-  //   }
+  //       }.fork {
+  //         for (expected <- expectedResults) {
+  //           dut.clock.step(cyclesNeeded)
+  //           dut.io.out.valid.expect(true.B)
+  //           dut.io.out.bits.expect(expected.U)
+  //           dut.clock.step(1)
+  //         }
+  //       }.join()
+  //     }
   // }
 }
