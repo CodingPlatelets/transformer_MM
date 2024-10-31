@@ -93,3 +93,61 @@ class AverageModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
   //     }
   // }
 }
+
+class StandardDeviationModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
+  behavior.of("StandardDeviationModule")
+
+  it should "calculate the standard deviation correctly" in {
+    test(new StandardDeviationModule(WII = 8, WIF = 8, WOI = 8, WOF = 16, ArraySize = 4))
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+        // 测试数据
+        val testData = Seq(
+          "00000100_10000000", // 4.5
+          "00001000_01000000", // 8.25
+          "00010000_00100000", // 16.125
+          "00100000_00010000" // 32.0625
+        )
+        // 将二进制字符串转换为浮点数
+        val numbers = testData.map(x => {
+          val intPart = x.split("_")(0)
+          val fracPart = x.split("_")(1)
+          BigInt(intPart + fracPart, 2).toFloat / (1 << dut.WIF)
+        })
+
+        // 计算平均值
+        val mean = numbers.sum / numbers.length
+
+        // 计算标准差
+        val stdDev = math.sqrt(
+          numbers.map(x => math.pow(x - mean, 2)).sum / numbers.length
+        )
+
+        println(s"Numbers: ${numbers.mkString(", ")}")
+        println(s"Mean: $mean")
+        println(s"Standard Deviation: $stdDev")
+
+        dut.reset.poke(true.B)
+        dut.clock.step(1)
+        dut.reset.poke(false.B)
+        dut.io.in.valid.poke(false.B)
+
+        fork {
+          dut.io.in.valid.poke(true.B)
+          dut.io.in.ready.expect(true.B)
+          testData.zipWithIndex.foreach {
+            case (value: String, index: Int) =>
+              dut.io.in.bits(index).poke(("b" + value).U)
+          }
+          dut.clock.step(1)
+          dut.io.in.valid.poke(false.B)
+        }.fork {
+          while (!dut.io.out.valid.peekBoolean()) {
+            dut.clock.step(1)
+          }
+          val calRes = dut.io.out.bits.peekInt().toFloat / (1 << dut.WOF)
+          println(s"Calculated Standard Deviation: $calRes")
+        }.join()
+
+      }
+  }
+}
