@@ -146,6 +146,85 @@ class StandardDeviationModuleSpec extends AnyFlatSpec with ChiselScalatestTester
           }
           val calRes = dut.io.out.bits.peekInt().toFloat / (1 << dut.WOF)
           println(s"Calculated Standard Deviation: $calRes")
+          dut.clock.step(1)
+          dut.io.out.valid.expect(false.B)
+        }.join()
+
+      }
+  }
+}
+
+class NormalizedModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
+  behavior.of("NormalizedModule")
+
+  it should "calculate the standard deviation correctly" in {
+    test(new NormalizedModule(WII = 8, WIF = 8, WOI = 8, WOF = 16, ArraySize = 4))
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+        // 测试数据
+        val testData = Seq(
+          "00000100_10000000", // 4.5
+          "00001000_01000000", // 8.25
+          "00010000_00100000", // 16.125
+          "00100000_00010000" // 32.0625
+        )
+        // 将二进制字符串转换为浮点数
+        val numbers = testData.map(x => {
+          val intPart = x.split("_")(0)
+          val fracPart = x.split("_")(1)
+          BigInt(intPart + fracPart, 2).toFloat / (1 << dut.WIF)
+        })
+
+        // 计算平均值
+        val mean = numbers.sum / numbers.length
+
+        // 计算标准差
+        val stdDev = math.sqrt(
+          numbers.map(x => math.pow(x - mean, 2)).sum / numbers.length
+        )
+
+        // 计算归一化结果
+        val normalizedRes = numbers.map(x => (x - mean) / stdDev)
+
+        println(s"Numbers: ${numbers.mkString(", ")}")
+        println(s"Mean: $mean")
+        println(s"Standard Deviation: $stdDev")
+        println(s"Normalized Results: ${normalizedRes.mkString(", ")}")
+
+        dut.reset.poke(true.B)
+        dut.clock.step(1)
+        dut.reset.poke(false.B)
+        dut.io.in.valid.poke(false.B)
+
+        val maxUnsignedValue = BigInt(2).pow(dut.WOF + dut.WOI)
+        val maxPositiveValue = BigInt(2).pow(dut.WOF + dut.WOI - 1)
+
+        fork {
+          dut.io.in.valid.poke(true.B)
+          dut.io.in.ready.expect(true.B)
+          testData.zipWithIndex.foreach {
+            case (value: String, index: Int) =>
+              dut.io.in.bits(index).poke(("b" + value).U)
+          }
+          dut.clock.step(1)
+          dut.io.in.valid.poke(false.B)
+        }.fork {
+          var cnt = 0
+          while (!dut.io.out.valid.peekBoolean()) {
+            dut.clock.step(1)
+            cnt += 1
+          }
+          val calRes = dut.io.out.bits.zipWithIndex.map {
+            case (value, index) => {
+              val inputTmp = value.peekInt()
+              val actualFloat = (if (inputTmp >= maxPositiveValue) { inputTmp - maxUnsignedValue }
+                                 else { inputTmp }).toFloat / (1 << dut.WOF)
+              actualFloat
+            }
+          }
+          println(s"Calculated Normalized Results: ${calRes.mkString(", ")}")
+          dut.clock.step(1)
+          println(s"cnt: $cnt")
+          dut.io.out.valid.expect(false.B)
         }.join()
 
       }

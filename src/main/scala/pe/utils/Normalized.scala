@@ -58,6 +58,7 @@ class StandardDeviationModule(
   val io = IO(new Bundle {
     val in = Flipped(Decoupled(Vec(ArraySize, UInt((WII + WIF).W))))
     val out = Valid(UInt((WOI + WOF).W))
+    val subMean = Valid(Vec(ArraySize, UInt((WII + WIF).W)))
   })
 
   // do average
@@ -77,6 +78,8 @@ class StandardDeviationModule(
     subModule.io.inb <> subAverage
     subModule.io.out
   })
+
+  io.subMean <> Pipe(subNums.map(_.valid).reduce(_ & _), VecInit(subNums.map(_.bits)), 0)
 
   // do square
   val squareNums = subNums.map(num => {
@@ -115,4 +118,42 @@ class StandardDeviationModule(
       }
     }
   }
+}
+
+// normalize the input array
+class NormalizedModule(
+  val WII:       Int = 8,
+  val WIF:       Int = 8,
+  val WOI:       Int = 8,
+  val WOF:       Int = 8,
+  val ArraySize: Int = 16)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val in = Flipped(Decoupled(Vec(ArraySize, UInt((WII + WIF).W))))
+    val out = Valid(Vec(ArraySize, UInt((WOI + WOF).W)))
+  })
+
+  val standardDeviationModule = Module(new StandardDeviationModule(WII, WIF, WII, WIF, ArraySize))
+  standardDeviationModule.io.in <> io.in
+
+  val sd = standardDeviationModule.io.out
+  val subMean = standardDeviationModule.io.subMean
+
+  // storage the subMean vec
+  val subMeanVec = RegInit(VecInit.fill(ArraySize)(0.U((WII + WIF).W)))
+  subMeanVec := Mux(subMean.valid, subMean.bits, subMeanVec)
+
+  // do divide
+  val divideRes = subMeanVec.map { num =>
+    {
+      val divModule = Module(new FxpDiv(WII, WIF, WII, WIF, WOI, WOF))
+      divModule.io.divisor <> sd
+      divModule.io.dividend <> Pipe(sd.valid, num, 0)
+      divModule.io.out
+    }
+  }
+
+  io.out <> Pipe(divideRes.map(_.valid).reduce(_ & _), VecInit(divideRes.map(_.bits)), 0)
+
 }
