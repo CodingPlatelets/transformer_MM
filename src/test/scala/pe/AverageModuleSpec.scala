@@ -178,9 +178,11 @@ class NormalizedModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
         val mean = numbers.sum / numbers.length
 
         // 计算标准差
-        val stdDev = math.sqrt(
-          numbers.map(x => math.pow(x - mean, 2)).sum / numbers.length
-        )
+        val stdDev = math
+          .sqrt(
+            numbers.map(x => math.pow(x - mean, 2)).sum / numbers.length
+          )
+          .toFloat
 
         // 计算归一化结果
         val normalizedRes = numbers.map(x => (x - mean) / stdDev)
