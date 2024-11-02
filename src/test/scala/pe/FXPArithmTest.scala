@@ -564,6 +564,9 @@ class FXPFloatTest extends AnyFlatSpec with ChiselScalatestTester {
   val maxUnsignedValue = BigInt(2).pow(WIF + WII)
   val maxPositiveValue = BigInt(2).pow(WIF + WII - 1)
 
+  val maxUnsignedValueO = BigInt(2).pow(WOF + WOI)
+  val maxPositiveValueO = BigInt(2).pow(WOF + WOI - 1)
+
   val annos = Seq(VerilatorBackendAnnotation)
   behavior.of("Fxp2floatPipe")
   it should ("do correctly") in {
@@ -594,6 +597,43 @@ class FXPFloatTest extends AnyFlatSpec with ChiselScalatestTester {
           dut.clock.step()
         }
         dut.io.out.valid.expect(false.B)
+      }.join()
+    }
+  }
+
+  it should ("do Float2FxpPipe") in {
+    test(new Float2FxpPipe(WOI, WOF)).withAnnotations(annos) { dut =>
+      dut.reset.poke(true.B)
+      dut.clock.step()
+      dut.reset.poke(false.B)
+      dut.clock.step()
+
+      // 生成随机Float测试数据
+      val r = new scala.util.Random(42) // 使用固定种子以保证可重复性
+      val testFloats = (0 until 10).map { _ =>
+        // 生成-100到100之间的随机浮点数
+        r.nextFloat() * 200 - 100
+      }.toSeq
+
+      fork {
+        for (i <- testFloats) {
+          // println(f"input = ${BigInt(java.lang.Float.floatToIntBits(i)).toString(16)}")
+          val inputStr = BigInt(java.lang.Float.floatToRawIntBits(i).toBinaryString, 2)
+          // println(f"inputStr = ${inputStr.toString(10)}")
+          dut.io.in.poke(inputStr.U)
+          dut.clock.step()
+        }
+      }.fork {
+        dut.clock.step(WOI + WOF + 3)
+        for (i <- testFloats) {
+          val res = dut.io.out.peekInt()
+          val resValue = (if (res >= maxPositiveValueO) { res - maxUnsignedValueO }
+                          else { res }).toFloat / (1 << WOF)
+          val resStr = res.toString(16)
+          val inputStr = BigInt(java.lang.Float.floatToRawIntBits(i).toBinaryString, 2).toString(16)
+          println(f"inputStr = $inputStr,\t outputStr = $resStr,\t input = $i,\t output = $resValue")
+          dut.clock.step()
+        }
       }.join()
     }
   }

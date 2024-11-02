@@ -121,6 +121,7 @@ class Fxp2Float(val WII: Int = 8, val WIF: Int = 8) extends Module {
   io.out := Cat(sign, expt, tail)
 }
 
+// test pass
 class Fxp2FloatPipe(val WII: Int = 8, val WIF: Int = 8) extends Module with DebugLog {
   val io = IO(new Bundle {
     val in = Input(Valid(UInt((WII + WIF).W)))
@@ -238,7 +239,7 @@ class Float2Fxp(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends 
   io.overflow := RegNext(overflow)
 }
 
-// todo: need test
+// test pass
 class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) extends Module with DebugLog {
   val io = IO(new Bundle {
     val in = Input(UInt(32.W))
@@ -249,13 +250,9 @@ class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) exte
   val ONEO = 1.U((WOI + WOF).W)
 
   // Input comb
-  val sign = Wire(Bool())
-  val exp = Wire(UInt(8.W))
-  val valWire = Wire(UInt(24.W))
-
-  sign := io.in(31)
-  exp := io.in(30, 23)
-  valWire := Cat(exp.orR, io.in(22, 0))
+  val sign = io.in(31)
+  val exp = io.in(30, 23)
+  val valWire = Cat(exp.orR, io.in(22, 0))
 
   // Pipeline stage 1
   val signinit = RegInit(false.B)
@@ -264,7 +261,7 @@ class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) exte
   val outinit = RegInit(0.U((WOI + WOF).W))
 
   if (WOI + WOF - 1 >= 23) {
-    outinit := 0.U(1.W) ## valWire ## 0.U
+    outinit := Cat(valWire, 0.U((WOI + WOF - 1 - 23).W))
     roundinit := false.B
   } else {
     outinit := valWire(23, 23 - (WOI + WOF - 1))
@@ -275,62 +272,69 @@ class Float2FxpPipe(val WOI: Int = 8, val WOF: Int = 8, val ROUND: Int = 1) exte
   when(exp === 255.U || Cat(0.U(24.W), exp) > (WOI + 126).U) {
     expinit := 0.S
   }.otherwise {
-    expinit := (Cat(0.U(24.W), exp).asSInt - (WOI - 1).S - 127.S)
+    expinit := Cat(0.U(24.W), exp).asSInt - (WOI - 1).S - 127.S
   }
 
   // Next pipeline stages
   val signs = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(false.B)))
   val rounds = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(false.B)))
-  val exps = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.S(32.W))))
+  val exps = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U(32.W))))
   val outs = RegInit(VecInit(Seq.fill(WOI + WOF + 1)(0.U((WOI + WOF).W))))
 
+  // debugLog(
+  //   p"io.in: ${io.in}, signinit: ${signinit}, roundinit: ${roundinit}, expinit: ${expinit}, outinit: ${outinit}.\n \n",
+  //   LogLevel.DEBUG
+  // )
+
+  // init
+  signs(WOI + WOF) := signinit
+  rounds(WOI + WOF) := roundinit
+  exps(WOI + WOF) := expinit.asUInt
+  outs(WOI + WOF) := outinit
+
+  // stage 1
   for (ii <- 0 until WOI + WOF) {
     signs(ii) := signs(ii + 1)
-    when(exps(ii + 1) =/= 0.S) {
-      outs(ii) := outs(ii + 1) << 1
-      rounds(ii) := false.B
-      exps(ii) := exps(ii + 1) + 1.S
+    when(exps(ii + 1) =/= 0.U) {
+      outs(ii) := Cat(0.U(1.W), outs(ii + 1)(WOI + WOF - 1, 1))
+      rounds(ii) := outs(ii + 1)(0)
+      exps(ii) := exps(ii + 1) + 1.U
     }.otherwise {
       outs(ii) := outs(ii + 1)
       rounds(ii) := rounds(ii + 1)
       exps(ii) := exps(ii + 1)
     }
   }
-  debugLog(p"signs: ${signs},\n rounds: ${rounds},\n exps: ${exps},\n outs: ${outs}.\n \n")
-  signs(WOI + WOF) := signinit
-  rounds(WOI + WOF) := roundinit
-  exps(WOI + WOF) := expinit
-  outs(WOI + WOF) := outinit
+  // debugLog(p"signs: ${signs},\n rounds: ${rounds},\n exps: ${exps},\n outs: ${outs}.\n \n", LogLevel.DEBUG)
 
   // Last 2nd pipeline stage
   val signl = RegInit(false.B)
   val outl = RegInit(0.U((WOI + WOF).W))
-  val outt = Reg(UInt((WOI + WOF).W))
 
-  outt := outs(0)
-  when(ROUND.B && rounds(0) && !(outt.andR)) {
-    outt := outt + 1.U
-  }
   when(signs(0)) {
-    signl := outt =/= 0.U
-    outt := (~outt).asUInt + ONEO
+    outl := Mux(ROUND.B && rounds(0) && !outs(0).andR, ~(outs(0) + 1.U) + ONEO, ~outs(0) + ONEO)
+    signl := Mux(ROUND.B && rounds(0) && !outs(0).andR, true.B, outs(0) =/= 0.U)
   }.otherwise {
+    outl := outs(0)
     signl := false.B
   }
-  outl := outt
 
   // Last 1st pipeline stage: overflow control
-  io.out := outl
-  io.overflow := false.B
   when(signl) {
     when(!outl(WOI + WOF - 1)) {
       io.out := Cat(1.U(1.W), 0.U((WOI + WOF - 1).W))
       io.overflow := true.B
+    }.otherwise {
+      io.out := outl
+      io.overflow := false.B
     }
   }.otherwise {
     when(outl(WOI + WOF - 1)) {
       io.out := Cat(0.U(1.W), Fill(WOI + WOF - 1, 1.U))
       io.overflow := true.B
+    }.otherwise {
+      io.out := outl
+      io.overflow := false.B
     }
   }
 }
