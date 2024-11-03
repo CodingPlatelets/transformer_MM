@@ -17,7 +17,7 @@ class SoftmaxTest extends AnyFlatSpec with ChiselScalatestTester {
   val annos = Seq(VerilatorBackendAnnotation)
   val wholeWidth:      Int = SdpmmConfigs.bit + SdpmmConfigs.fixedPoint
   val fractionalWidth: Int = SdpmmConfigs.fixedPoint
-  val pow2 = scala.math.pow(2, fractionalWidth)
+  val pow2 = scala.math.pow(2, fractionalWidth).toFloat
   behavior.of("tester on exp function in chisel")
   it should "exp in fixedpoint" in {
     test(new FixedPointExp(wholeWidth, fractionalWidth))
@@ -33,16 +33,33 @@ class SoftmaxTest extends AnyFlatSpec with ChiselScalatestTester {
 
         // writer.write("Input Value,Computed Exp,Actual Exp,Relative Error (%)\n")
 
-        for (value <- range) {
-          dut.io.x.poke(value.F(fractionalWidth.BP).asSInt)
-          dut.clock.step(1)
-          val actualValue = scala.math.exp(value.toDouble)
-          val computedValue = dut.io.exp_x.peek().litValue.toFloat / pow2
-          val relativeError = ((actualValue - computedValue) / actualValue).abs * 100
-          assert(relativeError < 5)
+        dut.io.x.valid.poke(false.B)
 
-          // writer.write(f"$value%.4f,$computedValue%.8f,$actualValue%.8f,$relativeError%.4f\n")
-        }
+        fork {
+          for (value <- range) {
+            dut.io.x.valid.poke(true.B)
+            dut.io.x.bits.poke(value.F(fractionalWidth.BP).asSInt)
+            dut.clock.step()
+          }
+
+          dut.io.x.valid.poke(false.B)
+        }.fork {
+          dut.clock.step(dut.expDelay)
+          for (value <- range) {
+            val actualValue = scala.math.exp(value.toDouble).toFloat
+            dut.io.exp_x.valid.expect(true.B)
+            val computedValue = dut.io.exp_x.bits.peekInt().toFloat / pow2
+            val relativeError = ((actualValue - computedValue) / actualValue).abs * 100
+
+            println(
+              s"actualValue is $actualValue,\t computedValue is $computedValue,\t relativeError is $relativeError"
+            )
+            assert(relativeError < 5)
+
+            dut.clock.step()
+          }
+          dut.io.exp_x.valid.expect(false.B)
+        }.join()
 
       // writer.close()
       }
