@@ -4,6 +4,29 @@ import chisel3._
 import chisel3.util._
 import kernel.utils.DebugLog
 
+trait GEMMAccuracyConfig {
+  val I: Int = 4
+  val F: Int = 12
+}
+
+class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
+  val io = IO(new Bundle {
+    val in_h = Input(UInt((I + F).W))
+    val in_v = Input(UInt((I + F).W))
+    val out_h = Output(UInt((I + F).W))
+    val out_v = Output(UInt((I + F).W))
+    val out = Output(UInt((2 * (I + F)).W))
+  })
+
+  val res = RegInit(0.U((2 * (I + F)).W))
+  val tmp = FxpMulPure(io.in_h, io.in_v)(I, F, I, F)
+  res := FxpAddPure(res, tmp)(I * 2, F * 2, I * 2, F * 2)
+
+  io.out_h := RegNext(io.in_h)
+  io.out_v := RegNext(io.in_v)
+  io.out := res
+}
+
 // Compute A * B, where A and B are both square matrix.
 class GEMM(val n: Int = 4, val bits: Int = 8) extends Module with DebugLog {
 

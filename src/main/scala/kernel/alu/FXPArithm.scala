@@ -1,5 +1,4 @@
 package kernel.alu
-
 import chisel3._
 import chisel3.util._
 import fixedpoint._
@@ -369,7 +368,39 @@ class FxpAdd(
   resZoom.io.in <> Pipe(io.ina.valid && io.inb.valid, middleWire.asUInt, addLatency)
   io.out <> resZoom.io.out
   io.overflow <> resZoom.io.overflow
+}
 
+class FxpAddPure(
+  val WIIA: Int = 8,
+  val WIFA: Int = 8,
+  val WIIB: Int = 8,
+  val WIFB: Int = 8)
+    extends Module
+    with DebugLog {
+
+  val WII = if (WIIA > WIIB + 1) WIIA else WIIB + 1
+  val WIF = if (WIFA > WIFB) WIFA else WIFB
+  val io = IO(new Bundle {
+    val ina = Input(UInt((WIIA + WIFA).W))
+    val inb = Input(UInt((WIIB + WIFB).W))
+    // true for subtraction, false for addition
+    val out = Output(UInt((WII + WIF).W))
+  })
+
+  val middleWire = Wire(FixedPoint((WII + WIF + 1).W, WIF.BP))
+
+  middleWire := io.ina.asFixedPoint(WIFA.BP) +& io.inb.asFixedPoint(WIFB.BP)
+
+  io.out := middleWire.asUInt
+}
+
+object FxpAddPure {
+  def apply(ina: UInt, inb: UInt)(WIIA: Int, WIFA: Int, WIIB: Int, WIFB: Int): UInt = {
+    val fxpAddPure = Module(new FxpAddPure(WIIA, WIFA, WIIB, WIFB))
+    fxpAddPure.io.ina := ina
+    fxpAddPure.io.inb := inb
+    fxpAddPure.io.out
+  }
 }
 
 class FxpMul(
@@ -400,6 +431,37 @@ class FxpMul(
   resZoom.io.in <> Pipe(io.ina.valid && io.inb.valid, middleWire.asUInt, mulLatency)
   io.out <> resZoom.io.out
   io.overflow <> resZoom.io.overflow
+}
+
+class FxpMulPure(
+  val WIIA: Int = 8,
+  val WIFA: Int = 8,
+  val WIIB: Int = 8,
+  val WIFB: Int = 8)
+    extends Module
+    with DebugLog {
+
+  val WRI = WIIA + WIIB
+  val WRF = WIFA + WIFB
+  val io = IO(new Bundle {
+    val ina = Input(UInt((WIIA + WIFA).W))
+    val inb = Input(UInt((WIIB + WIFB).W))
+    val out = Output(UInt((WRI + WRF).W))
+  })
+
+  val middleWire = Wire(FixedPoint((WRI + WRF).W, WRF.BP))
+  middleWire := io.ina.asFixedPoint(WIFA.BP) * io.inb.asFixedPoint(WIFB.BP)
+
+  io.out := middleWire.asUInt
+}
+
+object FxpMulPure {
+  def apply(ina: UInt, inb: UInt)(WIIA: Int, WIFA: Int, WIIB: Int, WIFB: Int): UInt = {
+    val fxpMulPure = Module(new FxpMulPure(WIIA, WIFA, WIIB, WIFB))
+    fxpMulPure.io.ina := ina
+    fxpMulPure.io.inb := inb
+    fxpMulPure.io.out
+  }
 }
 
 class FxpDiv(

@@ -157,3 +157,65 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new GEMM(6, 16)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
   }
 }
+
+class GEMMFxpTest extends AnyFlatSpec with ChiselScalatestTester {
+  def mmul(a: Array[Array[Int]], b: Array[Array[Int]]): Array[Array[Int]] = {
+    for (r <- a) yield {
+      for (c <- b.transpose) yield r.zip(c).map(Function.tupled(_ * _)).reduceLeft(_ + _)
+    }
+  }
+
+  // n * n
+  def matInit(n: Int): Array[Array[Int]] = {
+    val rseed = System.currentTimeMillis().toInt
+    // val rseed = 200
+    val maxval = 5
+    val rnd = new scala.util.Random(rseed)
+
+    Array.tabulate(n) { _ => Array.tabulate(n) { _ => rnd.nextInt(maxval + 1) + 1 } }
+  }
+
+  def printmat(m: Array[Array[Int]]): Unit = {
+    m.foreach { r => r.foreach { v => print(f"$v%4d") }; print(" ;") }
+    println()
+  }
+
+  def doubleToFixedPoint(d: Double, intBits: Int, fracBits: Int): BigInt = {
+    // 检查数值范围
+    val maxVal = Math.pow(2, intBits - 1) - Math.pow(2, -fracBits)
+    val minVal = -Math.pow(2, intBits - 1)
+    require(d <= maxVal && d >= minVal, s"Value $d out of range [$minVal, $maxVal]")
+
+    // 转换为定点数表示
+    BigInt((d * (1 << fracBits)).round)
+  }
+
+  private def testPEFxp(dut: PEFxp): Unit = {
+
+    val hins = List(1.1, 2.2, 3.3, 0)
+    val vins = List(4.4, 5.5, 6.6, 0)
+    var acc = 0.0
+    println("ProcElemUnitTester")
+    for (i <- vins.zip(hins)) {
+      // dut.io.out.expect(acc)
+      val h = i._1
+      val v = i._2
+      // acc += h * v
+      acc += h * v
+      dut.io.in_h.poke(doubleToFixedPoint(h, dut.I, dut.F))
+      dut.io.in_v.poke(doubleToFixedPoint(v, dut.I, dut.F))
+      val out_h = dut.io.out_h.peekInt().toDouble / (1 << (dut.F))
+      val out_v = dut.io.out_v.peekInt().toDouble / (1 << (dut.F))
+      val out = dut.io.out.peekInt().toDouble / (1 << (2 * dut.F))
+      println(
+        f"h=${h}%.4f\t v=${v}%.4f\t out_h=${out_h}%.4f\t out_v=${out_v}%.4f\t out=${out}%.8f\t realAcc=$acc%.4f\n"
+      )
+      dut.clock.step()
+    }
+    // dut.io.out.expect(acc)
+  }
+
+  "PEFxp basic test on Verilator" should "pass" in {
+    test(new PEFxp()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFxp)
+  }
+}
