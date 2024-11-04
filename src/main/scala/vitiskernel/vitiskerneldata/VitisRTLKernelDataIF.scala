@@ -1,7 +1,7 @@
 package vitiskernel.vitiskerneldata
 
 import chisel3._
-import pe.utils.common
+import kernel.utils.common
 import vitiskernel.interface.{VitisAXIReadMaster, VitisAXIWriteMaster}
 
 /**

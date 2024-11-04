@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import fputil._
 import _root_.circt.stage.ChiselStage
-import pe.TOPSdpmm
+import kernel.TOPSdpmm
 import vitiskerneldata.VitisRTLKernelDataIF
 
 class VitisRTLKernel extends RawModule {

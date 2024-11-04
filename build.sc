@@ -64,7 +64,7 @@ object trans extends transformer_MMModule with HasChisel { m =>
   )
   override def forkArgs = Seq("-Xmx8G", "-Xss256m")
   // def mainClass = Some("vitiskernel.VitisRTLKernelVerilog")
-  def mainClass = Some("pe.NewFeatureTest")
+  def mainClass = Some("kernel.NewFeatureTest")
   override def ivyDeps = super.ivyDeps() ++ Agg(
     defaultVersions("chiseltest")
   )

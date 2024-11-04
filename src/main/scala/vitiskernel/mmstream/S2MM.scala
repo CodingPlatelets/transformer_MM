@@ -2,7 +2,7 @@ package vitiskernel.mmstream
 
 import chisel3._
 import chisel3.util._
-import pe.utils.DebugLog
+import kernel.utils.DebugLog
 import vitiskernel.interface.VitisAXIWriteMaster
 
 class S2MM(val ADDR_WIDTH: Int, val DATA_WIDTH: Int) extends Module with DebugLog {
