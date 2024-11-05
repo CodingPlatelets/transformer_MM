@@ -179,13 +179,13 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     // dut.io.out.expect(acc)
   }
 
-  // "PEFxp basic test on Verilator" should "pass" in {
-  //   test(new PEFxp()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFxp)
-  // }
+  "PEFxp basic test on Verilator" should "pass" in {
+    test(new PEFxp()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFxp)
+  }
 
-  // "SystolicMM basic test on Verilator" should "pass" in {
-  //   test(new SystolicMM(5)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
-  // }
+  "SystolicMM basic test on Verilator" should "pass" in {
+    test(new SystolicMM(5)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+  }
 
   "GeMM basic test on Verilator" should "pass" in {
     test(new GEMM(6)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
