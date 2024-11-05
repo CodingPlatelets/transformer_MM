@@ -2,26 +2,29 @@ package kernel.alu
 
 import chisel3._
 import chisel3.util._
-import kernel.configs.SdpmmConfigs
 import kernel.utils.DebugLog
 import fixedpoint._
 import kernel.utils.PipeValue
 import kernel.utils.common
-import coursier.core.Version.Min
 
-class FixedPointExp(val wholeWidth: Int, val fractionalWidth: Int) extends Module with DebugLog {
+trait SoftmaxAccuracy {
+  val I: Int = 8
+  val F: Int = 16
+}
+
+class FixedPointExp extends Module with SoftmaxAccuracy with DebugLog {
   val io = IO(new Bundle {
-    val x = Input(Valid(SInt((wholeWidth).W)))
-    val exp_x = Valid(UInt((wholeWidth).W))
+    val x = Input(Valid(SInt((I + F).W)))
+    val exp_x = Valid(UInt((I + F).W))
   })
 
-  val z = Wire(SInt(((wholeWidth).W)))
-  val p = Wire(FixedPoint((wholeWidth).W, fractionalWidth.BP))
-  val lp = Wire(FixedPoint((wholeWidth).W, fractionalWidth.BP))
-  val ln2 = WireDefault(FixedPoint.fromBigDecimal(0.6931471805599453, wholeWidth.W, fractionalWidth.BP))
-  val bias1 = WireDefault(FixedPoint.fromBigDecimal(1.353, wholeWidth.W, fractionalWidth.BP))
-  val k1 = WireDefault(FixedPoint.fromBigDecimal(0.3585, wholeWidth.W, fractionalWidth.BP))
-  val bias2 = WireDefault(FixedPoint.fromBigDecimal(0.344, wholeWidth.W, fractionalWidth.BP))
+  val z = Wire(SInt((I + F).W))
+  val p = Wire(FixedPoint((I + F).W, F.BP))
+  val lp = Wire(FixedPoint((I + F).W, F.BP))
+  val ln2 = WireDefault(FixedPoint.fromBigDecimal(0.6931471805599453, (I + F).W, F.BP))
+  val bias1 = WireDefault(FixedPoint.fromBigDecimal(1.353, (I + F).W, F.BP))
+  val k1 = WireDefault(FixedPoint.fromBigDecimal(0.3585, (I + F).W, F.BP))
+  val bias2 = WireDefault(FixedPoint.fromBigDecimal(0.344, (I + F).W, F.BP))
 
   val expDelay = 3
 
@@ -33,30 +36,31 @@ class FixedPointExp(val wholeWidth: Int, val fractionalWidth: Int) extends Modul
 
   // p = x + z * ln2
   // p := io.x.asFixedPoint(fractionalWidth.BP) + z.asFixedPoint(fractionalWidth.BP) * ln2
-  p := (RegNext(io.x.bits) + z_delay * ln2.asUInt).asFixedPoint(fractionalWidth.BP)
+  p := (RegNext(io.x.bits) + z_delay * ln2.asUInt).asFixedPoint(F.BP)
 
   lp := RegNext(k1 * (p + bias1) * (p + bias1) + bias2)
   io.exp_x.bits := RegNext(lp >> z_delay2.asUInt).asUInt
   io.exp_x.valid := ShiftRegister(io.x.valid, expDelay)
 }
 
-class Softmax(val WII: Int, val WIF: Int, val WOI: Int, val WOF: Int, val arraySize: Int = 4)
-    extends Module
-    with DebugLog {
+class Softmax(val arraySize: Int = 4) extends Module with SoftmaxAccuracy with DebugLog {
   val io = IO(new Bundle {
-    val x = Input(Valid(Vec(arraySize, UInt((WII + WIF).W))))
-    val soft_x = Valid(Vec(arraySize, UInt((WOI + WOF).W)))
+    val x = Input(Valid(Vec(arraySize, UInt((I + F).W))))
+    val soft_x = Valid(Vec(arraySize, UInt((I + F).W)))
   })
 
   // first find the max value of x
-  val max = RegInit(0.U((WII + WIF).W))
+  // cycle 1
+  val max = RegInit(0.U((I + F).W))
   max := io.x.bits.reduceTree((a, b) => Mux(a > b, a, b))
+  val xReg = RegNext(io.x.bits)
 
+  // cycle 2
   // then find all the exp(x - max)
-  val expX = io.x.bits.map { x =>
-    val expALU = Module(new FixedPointExp(WII + WIF, WOF))
-    expALU.io.x.bits := x - max
-    expALU.io.x.valid := io.x.valid
+  val expX = xReg.map { x =>
+    val expALU = Module(new FixedPointExp)
+    expALU.io.x.bits := (~(max - x) + 1.U).asSInt
+    expALU.io.x.valid := RegNext(io.x.valid)
     expALU.io.exp_x
   }
 
@@ -64,7 +68,7 @@ class Softmax(val WII: Int, val WIF: Int, val WOI: Int, val WOF: Int, val arrayS
 
   // finally divide each exp(x - max) by exp_sum
   val softTmp = expX.map { exp =>
-    val divModule = Module(new FxpDiv(WII + WIF, WOF, WOI, WOF))
+    val divModule = Module(new FxpDiv(I, F, I, F, I, F))
     divModule.io.dividend := exp
     divModule.io.divisor := exp_sum
     divModule.io.out

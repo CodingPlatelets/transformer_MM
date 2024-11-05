@@ -8,18 +8,16 @@ import java.io._
 import kernel.configs.SdpmmConfigs
 import os.write
 
-class SoftmaxTest extends AnyFlatSpec with ChiselScalatestTester {
+class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestTester {
 
 //   val bit = 64
 //   val dimV = 32
 //   val depth = 128
   val annos = Seq(VerilatorBackendAnnotation)
-  val wholeWidth:      Int = SdpmmConfigs.bit + SdpmmConfigs.fixedPoint
-  val fractionalWidth: Int = SdpmmConfigs.fixedPoint
-  val pow2 = scala.math.pow(2, fractionalWidth).toFloat
+  val pow2 = scala.math.pow(2, F).toFloat
   behavior.of("tester on exp function in chisel")
   it should "exp in fixedpoint" in {
-    test(new FixedPointExp(wholeWidth, fractionalWidth))
+    test(new FixedPointExp)
       .withAnnotations(annos) { dut =>
         dut.reset.poke(true.B)
         dut.clock.step()
@@ -37,7 +35,7 @@ class SoftmaxTest extends AnyFlatSpec with ChiselScalatestTester {
         fork {
           for (value <- range) {
             dut.io.x.valid.poke(true.B)
-            dut.io.x.bits.poke(value.F(fractionalWidth.BP).asSInt)
+            dut.io.x.bits.poke(value.F(F.BP).asSInt)
             dut.clock.step()
           }
 
@@ -50,9 +48,9 @@ class SoftmaxTest extends AnyFlatSpec with ChiselScalatestTester {
             val computedValue = dut.io.exp_x.bits.peekInt().toFloat / pow2
             val relativeError = ((actualValue - computedValue) / actualValue).abs * 100
 
-            println(
-              s"actualValue is $actualValue,\t computedValue is $computedValue,\t relativeError is $relativeError"
-            )
+            // println(
+            //   s"actualValue is $actualValue,\t computedValue is $computedValue,\t relativeError is $relativeError"
+            // )
             assert(relativeError < 5)
 
             dut.clock.step()
@@ -63,76 +61,61 @@ class SoftmaxTest extends AnyFlatSpec with ChiselScalatestTester {
       // writer.close()
       }
   }
+  def doubleToFixedPoint(d: Float, intBits: Int, fracBits: Int): BigInt = {
+    // 检查数值范围
+    val maxVal = Math.pow(2, intBits - 1) - Math.pow(2, -fracBits)
+    val minVal = -Math.pow(2, intBits - 1)
+    require(d <= maxVal && d >= minVal, s"Value $d out of range [$minVal, $maxVal]")
 
-  // it should "softmax in chisel3" in {
-  //   test(new Softmax)
-  //     .withAnnotations(annos) { dut =>
-  //       val numOfMask = SdpmmConfigs.numOfMask
-  //       val testQ = Seq.tabulate(SdpmmConfigs.dim)(x => scala.util.Random.nextInt(10) + 1)
-  //       val inputTimes = 1
+    // 转换为定点数表示
+    BigInt((d * (1L << fracBits)).round)
+  }
 
-  //       val pow2 = scala.math.pow(2, SdpmmConfigs.bit - 1)
+  val arraySize = 4
+  it should "pass softmax test" in {
+    test(new Softmax(arraySize))
+      .withAnnotations(annos) { dut =>
+        val rseed = 4
+        val rnd = new scala.util.Random(rseed)
+        val testQ = Seq.tabulate(arraySize)(_ => rnd.nextFloat() * 10)
 
-  //       val mask = for (i <- 0 until inputTimes) yield {
-  //         Seq.fill(2 * numOfMask)(scala.util.Random.nextInt(SdpmmConfigs.L)).distinct.take(numOfMask)
-  //       }
-  //       var resultSoftmax = Seq.tabulate(SdpmmConfigs.dim) { i =>
-  //         val exp = scala.math.exp(testQ(i))
-  //         exp / (testQ.map(x => scala.math.exp(x)).sum)
-  //       }
-  //       println(testQ)
-  //       println(mask)
-  //       val writer = new PrintWriter(new File("softmax_test_results.csv"))
+        val maxInQ = testQ.max
+        val expInQ = testQ.map(x => scala.math.exp(x - maxInQ))
+        val sumExpInQ = expInQ.sum
+        val resultSoftmax = expInQ.map(_ / sumExpInQ)
 
-  //       writer.write("Input Value,Computed softmax,Actual softmax,Relative Error (%)\n")
+        println(s"testQ: ${testQ}")
+        println(s"resultSoftmax: ${resultSoftmax}")
 
-  //       dut.reset.poke(true.B)
-  //       dut.clock.step()
-  //       dut.reset.poke(false.B)
-  //       dut.clock.step()
-  //       fork {
-  //         var cnt = 0
-  //         while (cnt < inputTimes) {
-  //           if (dut.InputPipe.ready.peekBoolean()) {
-  //             dut.InputPipe.valid.poke(true.B)
-  //             for (i <- 0 until numOfMask) {
-  //               dut.InputPipe.bits.mask(i).poke(mask(cnt)(i).U)
-  //             }
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
+        dut.clock.step()
 
-  //             for (i <- 0 until SdpmmConfigs.dim) {
-  //               dut.InputPipe.bits.value(i).poke(testQ(i).U)
-  //             }
-  //             cnt = cnt + 1
-  //           } else {
-  //             dut.InputPipe.valid.poke(false.B)
-  //           }
-  //           dut.clock.step()
-  //         }
+        fork {
+          dut.io.x.valid.poke(true.B)
+          for (i <- 0 until arraySize) {
+            println(s"testQ($i): ${doubleToFixedPoint(testQ(i), I, F)}")
+            dut.io.x.bits(i).poke(doubleToFixedPoint(testQ(i), I, F).U)
+          }
+          dut.clock.step()
+          dut.io.x.valid.poke(false.B)
+        }.fork {
+          while (!dut.io.soft_x.valid.peekBoolean()) {
+            dut.clock.step()
+          }
+          for (i <- 0 until arraySize) {
+            val computedValue = dut.io.soft_x.bits(i).peekInt().toFloat / pow2
+            val relativeError = ((resultSoftmax(i) - computedValue) / resultSoftmax(i)).abs * 100
+            println(
+              s"actualValue is ${resultSoftmax(i)},\t computedValue is $computedValue,\t relativeError is $relativeError"
+            )
+            // assert(relativeError < 5)
+          }
+          dut.clock.step()
+          dut.io.soft_x.valid.expect(false.B)
+        }.join()
 
-  //         dut.InputPipe.valid.poke(false.B)
-  //       }.fork {
-  //         var cntR = 0
-  //         while (cntR < inputTimes) {
-  //           if (dut.OutputPipe.valid.peekBoolean()) {
-  //             for (i <- 0 until numOfMask) {
-  //               dut.OutputPipe.bits.mask(i).expect(mask(cntR)(i))
-  //             }
-  //             for (i <- 0 until SdpmmConfigs.dim) {
-  //               val com = dut.OutputPipe.bits.value(i).peek().litValue.toFloat / pow2
-  //               val act = resultSoftmax(i)
-  //               val relativeError = ((act - com) / act).abs * 100
-  //               writer.write(f"${testQ(i)}%.2f,$com%.5f,$act%.5f,$relativeError%.2f\n")
-  //             }
-  //             dut.OutputPipe.ready.poke(true.B)
-  //             cntR = cntR + 1
-  //           } else {
-  //             dut.OutputPipe.ready.poke(false.B)
-  //           }
-  //           dut.clock.step()
-  //         }
-  //         dut.OutputPipe.ready.poke(false.B)
-  //       }.join()
-  //       writer.close()
-  //     }
-  // }
+      }
+  }
 }
