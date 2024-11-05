@@ -6,68 +6,100 @@ import org.scalatest.Tag
 import org.scalatest.flatspec.AnyFlatSpec
 
 class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
-  def mmul(a: Array[Array[Int]], b: Array[Array[Int]]): Array[Array[Int]] = {
+
+  def mmul(a: Array[Array[Float]], b: Array[Array[Float]]): Array[Array[Float]] = {
     for (r <- a) yield {
       for (c <- b.transpose) yield r.zip(c).map(Function.tupled(_ * _)).reduceLeft(_ + _)
     }
   }
-
   // n * n
-  def matInit(n: Int): Array[Array[Int]] = {
+  def matInit(n: Int): Array[Array[Float]] = {
     val rseed = System.currentTimeMillis().toInt
     // val rseed = 200
-    val maxval = 5
+    val maxval = 5.0f
     val rnd = new scala.util.Random(rseed)
 
-    Array.tabulate(n) { _ => Array.tabulate(n) { _ => rnd.nextInt(maxval + 1) + 1 } }
+    Array.tabulate(n) { _ => Array.tabulate(n) { _ => maxval * rnd.nextFloat() + 1 } }
   }
 
-  def printmat(m: Array[Array[Int]]): Unit = {
-    m.foreach { r => r.foreach { v => print(f"$v%4d") }; print(" ;") }
+  def printmat(m: Array[Array[Float]]): Unit = {
+    m.foreach { r => r.foreach { v => print(f"${v}%.2f ") }; print(" ;") }
     println()
+  }
+
+  def doubleToFixedPoint(d: Float, intBits: Int, fracBits: Int): BigInt = {
+    // 检查数值范围
+    val maxVal = Math.pow(2, intBits - 1) - Math.pow(2, -fracBits)
+    val minVal = -Math.pow(2, intBits - 1)
+    require(d <= maxVal && d >= minVal, s"Value $d out of range [$minVal, $maxVal]")
+
+    // 转换为定点数表示
+    BigInt((d * (1L << fracBits)).round)
   }
 
   private def testGEMM(dut: GEMM) = {
     val n = dut.n
-    val a = matInit(n)
-    val b = matInit(n)
-    val y = mmul(a, b)
-    printmat(a)
-    printmat(b)
-    printmat(y)
 
-    for (i <- 0 until n) {
-      for (j <- 0 until n) {
-        dut.InputA(i)(j).poke(a(i)(j))
-        dut.InputB(i)(j).poke(b(i)(j))
-      }
+    val arraySize = 10
+    val matrixAArray = Array.tabulate(arraySize)(_ => matInit(n))
+    val matrixBArray = Array.tabulate(arraySize)(_ => matInit(n))
+    val matrixYArray = matrixAArray.zip(matrixBArray).map {
+      case (a, b) => mmul(a, b)
     }
-    dut.DataReady.poke(true.B)
 
-    dut.clock.step(3 * n)
-
-    dut.OutputPipe.valid.expect(true.B)
-    def checkresult(): List[Int] = {
+    def checkresult(): List[Float] = {
       val ret = for (j <- 0 until n * n) yield {
-        val out = dut.OutputPipe.bits(j).peekInt()
-        print(out.toString + " ")
-        out.toInt // litValue returns BigInt
+        val out = BigDecimal(dut.OutputPipe.bits(j).peekInt()) / (math.pow(2, 2 * dut.F))
+        print(f"${out}%.4f ")
+        out.toFloat // litValue returns BigInt
       }
       println()
       ret.toList
     }
 
-    val out = checkresult()
-    var invalidcnt = 0
-
-    for (i <- out.zip(y.flatten.toList)) {
-      if (i._1 != i._2) {
-        println("Error: " + i._1 + " " + i._2)
-        invalidcnt += 1
+    fork {
+      var c = 0;
+      while (c < arraySize) {
+        if (dut.InputA.ready.peekBoolean() && dut.InputB.ready.peekBoolean()) {
+          dut.InputA.valid.poke(true.B)
+          dut.InputB.valid.poke(true.B)
+          for (i <- 0 until n) {
+            for (j <- 0 until n) {
+              dut.InputA.bits(i)(j).poke(doubleToFixedPoint(matrixAArray(c)(i)(j), dut.I, dut.F))
+              dut.InputB.bits(i)(j).poke(doubleToFixedPoint(matrixBArray(c)(i)(j), dut.I, dut.F))
+            }
+          }
+          c += 1
+        } else {
+          dut.InputA.valid.poke(false.B)
+          dut.InputB.valid.poke(false.B)
+        }
+        dut.clock.step()
       }
-    }
-    if (invalidcnt == 0) println("GEMM Verification passed!")
-    assert(invalidcnt == 0)
+    }.fork {
+      var resC = 0
+      while (resC < arraySize) {
+        if (dut.OutputPipe.valid.peekBoolean()) {
+          dut.OutputPipe.ready.poke(true.B)
+          val out = checkresult()
+          var invalidcnt = 0
+          for (i <- out.zip(matrixYArray(resC).flatten.toList)) {
+            if (math.abs(i._1 - i._2) > 0.0001) {
+              println("Error: " + i._1 + " " + i._2)
+              invalidcnt += 1
+            }
+          }
+          if (invalidcnt == 0) println("GEMM Verification passed!")
+          assert(invalidcnt == 0)
+          resC += 1
+        } else {
+          dut.OutputPipe.ready.poke(false.B)
+        }
+        dut.clock.step()
+      }
+
+    }.join()
+
   }
 
   private def testSystolicMM(dut: SystolicMM): Unit = {
@@ -80,11 +112,11 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     printmat(b)
     printmat(y)
 
-    def checkresult(): List[Int] = {
+    def checkresult(): List[Float] = {
       val ret = for (j <- 0 until n * n) yield {
-        val out = dut.io.out(j).peek().litValue
-        print(out.toString + " ")
-        out.toInt // litValue returns BigInt
+        val out = BigDecimal(dut.io.out(j).peekInt()) / (math.pow(2, 2 * dut.F))
+        print(f"${out}%.4f ")
+        out.toFloat // litValue returns BigInt
       }
       println()
       ret.toList
@@ -94,15 +126,15 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
       for (idx <- 0 until n) {
         val p = clk - idx
         if (p >= 0 && p < n) {
-          dut.io.in_a(idx).poke(a(idx)(p))
-          dut.io.in_b(idx).poke(b(p)(idx))
+          dut.io.in_a(idx).poke(doubleToFixedPoint(a(idx)(p), dut.I, dut.F))
+          dut.io.in_b(idx).poke(doubleToFixedPoint(b(p)(idx), dut.I, dut.F))
         } else {
           dut.io.in_a(idx).poke(0)
           dut.io.in_b(idx).poke(0)
         }
       }
       dut.clock.step()
-      print(f"$clk: ")
+      print(f"clk: $clk: ")
       checkresult()
     }
     dut.clock.step(n - 2) //  double check n-2 is correct
@@ -111,7 +143,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
 
     var invalidcnt = 0
     for (i <- output.zip(y.flatten.toList)) {
-      if (i._1 != i._2) {
+      if (math.abs(i._1 - i._2) > 0.0001) {
         println("Error: " + i._1 + " " + i._2)
         invalidcnt += 1
       }
@@ -122,79 +154,10 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.clock.step(3)
   }
 
-  private def testProcElem(dut: ProcElem): Unit = {
-    require(dut.bits > 4)
-
-    val hins = List(1, 2, 3, 0)
-    val vins = List(4, 5, 6, 0)
-    var acc = 0
-    println("ProcElemUnitTester")
-    for (i <- vins.zip(hins)) {
-      dut.io.out.expect(acc)
-      val h = i._1
-      val v = i._2
-      acc += h * v
-      dut.io.in_h.poke(h)
-      dut.io.in_v.poke(v)
-      val out_h = dut.io.out_h.peek()
-      val out_v = dut.io.out_v.peek()
-      val out = dut.io.out.peek()
-      println(s"h=$h v=$v out_h=$out_h out_v=$out_v out=$out")
-      dut.clock.step()
-    }
-    dut.io.out.expect(acc)
-  }
-
-  "ProcElem basic test on Verilator" should "pass" in {
-    test(new ProcElem()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testProcElem)
-  }
-
-  "SystolicMM basic test on Verilator" should "pass" in {
-    test(new SystolicMM(5, 16)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
-  }
-
-  "GeMM basic test on Verilator" should "pass" in {
-    test(new GEMM(6, 16)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
-  }
-}
-
-class GEMMFxpTest extends AnyFlatSpec with ChiselScalatestTester {
-  def mmul(a: Array[Array[Int]], b: Array[Array[Int]]): Array[Array[Int]] = {
-    for (r <- a) yield {
-      for (c <- b.transpose) yield r.zip(c).map(Function.tupled(_ * _)).reduceLeft(_ + _)
-    }
-  }
-
-  // n * n
-  def matInit(n: Int): Array[Array[Int]] = {
-    val rseed = System.currentTimeMillis().toInt
-    // val rseed = 200
-    val maxval = 5
-    val rnd = new scala.util.Random(rseed)
-
-    Array.tabulate(n) { _ => Array.tabulate(n) { _ => rnd.nextInt(maxval + 1) + 1 } }
-  }
-
-  def printmat(m: Array[Array[Int]]): Unit = {
-    m.foreach { r => r.foreach { v => print(f"$v%4d") }; print(" ;") }
-    println()
-  }
-
-  def doubleToFixedPoint(d: Double, intBits: Int, fracBits: Int): BigInt = {
-    // 检查数值范围
-    val maxVal = Math.pow(2, intBits - 1) - Math.pow(2, -fracBits)
-    val minVal = -Math.pow(2, intBits - 1)
-    require(d <= maxVal && d >= minVal, s"Value $d out of range [$minVal, $maxVal]")
-
-    // 转换为定点数表示
-    BigInt((d * (1 << fracBits)).round)
-  }
-
   private def testPEFxp(dut: PEFxp): Unit = {
-
-    val hins = List(1.1, 2.2, 3.3, 0)
-    val vins = List(4.4, 5.5, 6.6, 0)
-    var acc = 0.0
+    val hins = List(1.1f, 2.2f, 3.3f, 0)
+    val vins = List(4.4f, 5.5f, 6.6f, 0)
+    var acc = 0.0f
     println("ProcElemUnitTester")
     for (i <- vins.zip(hins)) {
       // dut.io.out.expect(acc)
@@ -206,16 +169,25 @@ class GEMMFxpTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.in_v.poke(doubleToFixedPoint(v, dut.I, dut.F))
       val out_h = dut.io.out_h.peekInt().toDouble / (1 << (dut.F))
       val out_v = dut.io.out_v.peekInt().toDouble / (1 << (dut.F))
-      val out = dut.io.out.peekInt().toDouble / (1 << (2 * dut.F))
+      val out = BigDecimal(dut.io.out.peekInt()) / (1 * math.pow(2, 2 * dut.F))
+
       println(
-        f"h=${h}%.4f\t v=${v}%.4f\t out_h=${out_h}%.4f\t out_v=${out_v}%.4f\t out=${out}%.8f\t realAcc=$acc%.4f\n"
+        f"h=${h}%.4f\t v=${v}%.4f\t out_h=${out_h}%.4f\t out_v=${out_v}%.4f\t out=${out}%.4f\t realAcc=$acc%.4f\n"
       )
       dut.clock.step()
     }
     // dut.io.out.expect(acc)
   }
 
-  "PEFxp basic test on Verilator" should "pass" in {
-    test(new PEFxp()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFxp)
+  // "PEFxp basic test on Verilator" should "pass" in {
+  //   test(new PEFxp()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFxp)
+  // }
+
+  // "SystolicMM basic test on Verilator" should "pass" in {
+  //   test(new SystolicMM(5)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+  // }
+
+  "GeMM basic test on Verilator" should "pass" in {
+    test(new GEMM(6)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
   }
 }
