@@ -25,6 +25,8 @@ lazy val root = (project in file("."))
   .dependsOn(fputil)
   .settings(
     name := "transformer_MM",
+    // fork := true,
+    // javaOptions += "-Xmx50G",
     commonChiselSettings
   )
 

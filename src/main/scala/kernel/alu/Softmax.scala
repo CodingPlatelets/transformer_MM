@@ -8,8 +8,10 @@ import kernel.utils.PipeValue
 import kernel.utils.common
 
 trait SoftmaxAccuracy {
-  val I: Int = 8
-  val F: Int = 16
+  val I: Int = 4
+  val F: Int = 12
+
+  val maxDivNum = 16
 }
 
 class FixedPointExp extends Module with SoftmaxAccuracy with DebugLog {
@@ -43,6 +45,7 @@ class FixedPointExp extends Module with SoftmaxAccuracy with DebugLog {
   io.exp_x.valid := ShiftRegister(io.x.valid, expDelay)
 }
 
+// TODO: the number of divModule should be limited, max is 16
 class Softmax(val arraySize: Int = 4) extends Module with SoftmaxAccuracy with DebugLog {
   val io = IO(new Bundle {
     val x = Input(Valid(Vec(arraySize, UInt((I + F).W))))

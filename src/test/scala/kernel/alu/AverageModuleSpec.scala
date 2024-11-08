@@ -158,7 +158,7 @@ class NormalizedModuleSpec extends AnyFlatSpec with ChiselScalatestTester {
   behavior.of("NormalizedModule")
 
   it should "calculate the standard deviation correctly" in {
-    test(new NormalizedModule(WII = 8, WIF = 8, WOI = 8, WOF = 16, ArraySize = 4))
+    test(new NormalizedModule(WII = 4, WIF = 12, WOI = 4, WOF = 12, ArraySize = 4))
       .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
         // 测试数据
         val testData = Seq(

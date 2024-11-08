@@ -13,8 +13,9 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
 //   val bit = 64
 //   val dimV = 32
 //   val depth = 128
+  val FF = 24
   val annos = Seq(VerilatorBackendAnnotation)
-  val pow2 = scala.math.pow(2, F).toFloat
+  val pow2 = scala.math.pow(2, FF).toFloat
   behavior.of("tester on exp function in chisel")
   it should "exp in fixedpoint" in {
     test(new FixedPointExp)
@@ -24,7 +25,7 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
         dut.reset.poke(false.B)
         dut.clock.step()
         //generate a range number from -10.5 to 0.0 step 0.5
-        val range = BigDecimal(-9.0) to BigDecimal(0.0) by BigDecimal(0.5)
+        val range = BigDecimal(-7.0) to BigDecimal(0.0) by BigDecimal(0.5)
 
         // val writer = new PrintWriter(new File("test_results.csv"))
 
@@ -71,13 +72,13 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
     BigInt((d * (1L << fracBits)).round)
   }
 
-  val arraySize = 4
+  val arraySize = 4096
   it should "pass softmax test" in {
     test(new Softmax(arraySize))
       .withAnnotations(annos) { dut =>
         val rseed = 4
         val rnd = new scala.util.Random(rseed)
-        val testQ = Seq.tabulate(arraySize)(_ => rnd.nextFloat() * 10)
+        val testQ = Seq.tabulate(arraySize)(_ => rnd.nextFloat())
 
         val maxInQ = testQ.max
         val expInQ = testQ.map(x => scala.math.exp(x - maxInQ))
@@ -86,6 +87,7 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
 
         println(s"testQ: ${testQ}")
         println(s"resultSoftmax: ${resultSoftmax}")
+        println(s"maxInResult: ${resultSoftmax.max}")
 
         dut.reset.poke(true.B)
         dut.clock.step()
@@ -101,8 +103,10 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
           dut.clock.step()
           dut.io.x.valid.poke(false.B)
         }.fork {
+          var clk = 0
           while (!dut.io.soft_x.valid.peekBoolean()) {
             dut.clock.step()
+            clk += 1
           }
           for (i <- 0 until arraySize) {
             val computedValue = dut.io.soft_x.bits(i).peekInt().toFloat / pow2
@@ -112,6 +116,7 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
             )
             // assert(relativeError < 5)
           }
+          println(s"clk: $clk")
           dut.clock.step()
           dut.io.soft_x.valid.expect(false.B)
         }.join()

@@ -5,8 +5,8 @@ import chisel3.util._
 import kernel.utils.DebugLog
 
 trait GEMMAccuracyConfig {
-  val I: Int = 8
-  val F: Int = 24
+  val I: Int = 4
+  val F: Int = 12
 }
 
 class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
@@ -39,6 +39,10 @@ class GEMM(val n: Int = 4) extends Module with GEMMAccuracyConfig with DebugLog 
   val InputA = IO(Flipped(Decoupled(Vec(n, Vec(n, UInt((I + F).W))))))
   val InputB = IO(Flipped(Decoupled(Vec(n, Vec(n, UInt((I + F).W))))))
   val OutputPipe = IO(Decoupled(Vec(n * n, UInt((2 * (I + F)).W))))
+
+  // accumulate mode
+  val accMode = IO(Input(Bool()))
+  val accReg = RegInit(false.B)
 
   val dataValid = InputA.valid && InputB.valid
 

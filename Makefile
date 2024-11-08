@@ -8,7 +8,11 @@ test:
 verilog:
 	mkdir -p $(CHISEL_BUILD_DIR)
 	#mill -i chiselVitisTemplate.runMain --mainClass vitisrtlkernel.VitisRTLKernelVerilog -td $(CHISEL_BUILD_DIR)
-	sbt run
+	# sbt run
+	sbt "runMain vitisrtlkernel.VitisRTLKernelVerilog"
+
+feature:
+	sbt -J-Xmx50G "runMain kernel.NewFeatureTest"
 
 help:
 	mill -i __.runMain --mainClass vitisrtlkernel.VitisRTLKernelVerilog --help
