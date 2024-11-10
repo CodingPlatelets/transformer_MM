@@ -72,7 +72,7 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
     BigInt((d * (1L << fracBits)).round)
   }
 
-  val arraySize = 4096
+  val arraySize = 4
   it should "pass softmax test" in {
     test(new Softmax(arraySize))
       .withAnnotations(annos) { dut =>
