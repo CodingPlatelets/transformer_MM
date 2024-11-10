@@ -5,8 +5,8 @@ import chisel3.util._
 import kernel.utils.DebugLog
 
 trait GEMMAccuracyConfig {
-  val I: Int = 4
-  val F: Int = 12
+  val I: Int = 8
+  val F: Int = 24
 }
 
 class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {

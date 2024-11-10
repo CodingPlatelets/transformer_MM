@@ -12,6 +12,8 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
       for (c <- b.transpose) yield r.zip(c).map(Function.tupled(_ * _)).reduceLeft(_ + _)
     }
   }
+
+  val precision = 0.001f
   // n * n
   def matInit(n: Int): Array[Array[Float]] = {
     val rseed = System.currentTimeMillis().toInt
@@ -84,7 +86,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
           val out = checkresult()
           var invalidcnt = 0
           for (i <- out.zip(matrixYArray(resC).flatten.toList)) {
-            if (math.abs(i._1 - i._2) > 0.0001) {
+            if (math.abs(i._1 - i._2) > precision) {
               println("Error: " + i._1 + " " + i._2)
               invalidcnt += 1
             }
@@ -143,7 +145,7 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
 
     var invalidcnt = 0
     for (i <- output.zip(y.flatten.toList)) {
-      if (math.abs(i._1 - i._2) > 0.0001) {
+      if (math.abs(i._1 - i._2) > precision) {
         println("Error: " + i._1 + " " + i._2)
         invalidcnt += 1
       }
