@@ -18,7 +18,7 @@ trait llamaConfig {
   val bits = 16
 
   // systolic array size
-  val systolicSize = 64
+  val systolicSize = 16
   val systolicGroupSize = 1
 
   // DAC for zb, stream for heads

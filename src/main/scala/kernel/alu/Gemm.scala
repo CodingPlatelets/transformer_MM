@@ -3,10 +3,11 @@ package kernel.alu
 import chisel3._
 import chisel3.util._
 import kernel.utils.DebugLog
-
+import fputil.FPMult
+import fputil.FPAdd
 trait GEMMAccuracyConfig {
-  val I: Int = 8
-  val F: Int = 24
+  val I: Int = 4
+  val F: Int = 12
 }
 
 class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
@@ -31,6 +32,63 @@ class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
   io.out_h := RegNext(io.in_h)
   io.out_v := RegNext(io.in_v)
   io.out := res
+}
+
+// a * b + c
+class FMA(width: Int = 32) extends Module with DebugLog {
+  val io = IO(new Bundle {
+    val a = Input(Valid(UInt(width.W)))
+    val b = Input(Valid(UInt(width.W)))
+    val c = Input(Valid(UInt(width.W)))
+    val out = Valid(UInt(width.W))
+  })
+
+  // one cycle latency
+  val tmp = FPMult(width)(io.a.bits, io.b.bits, io.a.valid && io.b.valid)
+
+  // three cycle latency
+  val tmpRes = FPAdd(width)(io.c.bits, tmp.bits, io.c.valid && tmp.valid)
+
+  io.out.bits := Mux(tmpRes.valid, tmpRes.bits, io.c.bits)
+  io.out.valid := tmpRes.valid
+}
+
+class PEFp(width: Int = 32, size: Int = 4) extends Module with DebugLog {
+  val io = IO(new Bundle {
+    val in_h = Input(Valid(UInt(width.W)))
+    val in_v = Input(Valid(UInt(width.W)))
+    val out_h = Valid(UInt(width.W))
+    val out_v = Valid(UInt(width.W))
+    val out = Output(UInt(width.W))
+    val reset = Input(Bool())
+  })
+
+  io.out_h <> RegNext(io.in_h)
+  io.out_v <> RegNext(io.in_v)
+
+  val container = RegInit(0.U(width.W))
+
+  val bufferMul = RegInit(VecInit.fill(size)(0.U(width.W)))
+  val mulTmp = FPMult(width)(io.in_h.bits, io.in_v.bits, io.in_h.valid && io.in_v.valid)
+  val (counter, _) = Counter(0 until size, mulTmp.valid, io.reset)
+
+  bufferMul(counter) := Mux(mulTmp.valid, mulTmp.bits, bufferMul(counter))
+  when(io.reset) {
+    container := 0.U
+  }
+
+  io.out := bufferMul.reduceTree(
+    (a, b) => {
+      val fadd = Module(new FPAdd(width))
+      fadd.io.a.bits := a
+      fadd.io.b.bits := b
+      fadd.io.a.valid := true.B
+      fadd.io.b.valid := true.B
+      fadd.io.res.bits
+    },
+    a => ShiftRegister(a, 3)
+  )
+  debugLog(p"out: ${io.out}, bufferMul: ${bufferMul}, counter: ${counter}\n", LogLevel.DEBUG)
 }
 
 // Compute A * B, where A and B are both square matrix.

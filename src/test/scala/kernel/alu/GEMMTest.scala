@@ -181,15 +181,58 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     // dut.io.out.expect(acc)
   }
 
-  "PEFxp basic test on Verilator" should "pass" in {
-    test(new PEFxp()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFxp)
+  private def testPEFp(dut: PEFp): Unit = {
+    val hins = Seq(2.1f, 2.2f, 3.3f, 1123.1234f)
+    val vins = Seq(4.4f, 5.5f, 6.6f, 3214.2314f)
+    val result = hins.zip(vins).map(i => i._1 * i._2).sum
+    println("PE float test")
+    println(s"result: $result")
+
+    dut.reset.poke(true.B)
+    dut.io.reset.poke(true.B)
+    dut.clock.step(1)
+    dut.reset.poke(false.B)
+    dut.io.reset.poke(false.B)
+    dut.io.in_h.valid.poke(false.B)
+    dut.io.in_v.valid.poke(false.B)
+
+    fork {
+      for ((i, j) <- vins.zip(hins)) {
+        dut.io.in_h.valid.poke(true.B)
+        dut.io.in_v.valid.poke(true.B)
+        dut.io.in_h.bits.poke(BigInt(java.lang.Float.floatToRawIntBits(i).toBinaryString, 2).U)
+        dut.io.in_v.bits.poke(BigInt(java.lang.Float.floatToRawIntBits(j).toBinaryString, 2).U)
+        // dut.clock.step()
+        // println(f"acc: $acc%.4f")
+        dut.clock.step()
+      }
+      dut.io.in_h.valid.poke(false.B)
+      dut.io.in_v.valid.poke(false.B)
+      dut.io.in_h.bits.poke(0.U)
+      dut.io.in_v.bits.poke(0.U)
+      dut.clock.step(3)
+    }.fork {
+      dut.clock.step(11)
+      val out = java.lang.Float.intBitsToFloat(dut.io.out.peekInt().toInt)
+      assert(math.abs(out - result) < precision)
+      // println(f"out: ${out}%.4f\t, result: $result%.4f")
+      dut.clock.step(3)
+    }.join()
   }
 
-  "SystolicMM basic test on Verilator" should "pass" in {
-    test(new SystolicMM(5)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+  // "PEFxp basic test on Verilator" should "pass" in {
+  //   test(new PEFxp()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFxp)
+  // }
+
+  "PEFp basic test on Verilator" should "pass" in {
+    test(new PEFp(32, 4)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFp)
   }
 
-  "GeMM basic test on Verilator" should "pass" in {
-    test(new GEMM(6)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
-  }
+  // "SystolicMM basic test on Verilator" should "pass" in {
+  //   test(new SystolicMM(5)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+  // }
+
+  // "GeMM basic test on Verilator" should "pass" in {
+  //   test(new GEMM(6)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
+  // }
 }

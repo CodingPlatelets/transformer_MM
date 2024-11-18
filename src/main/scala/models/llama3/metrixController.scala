@@ -26,10 +26,13 @@ class SystolicGroup extends Module with llamaConfig {
     val matrixCVec = Decoupled(Vec(systolicGroupSize, Vec(systolicSize * systolicSize, UInt(bits.W))))
   })
 
-  val gemmRow = for (i <- 0 until systolicGroupSize) yield Module(new GEMM(64))
+  val gemmRow = for (i <- 0 until systolicGroupSize) yield Module(new GEMM(16))
 
   val matrixAValid = io.matrixAVec.valid
   val matrixBValid = io.matrixBVec.valid
+
+  io.matrixAVec.ready := gemmRow.map(_.InputA.ready).reduce(_ && _)
+  io.matrixBVec.ready := gemmRow.map(_.InputB.ready).reduce(_ && _)
 
   val matrixCValid = gemmRow.map(_.OutputPipe.valid).reduce(_ && _)
 

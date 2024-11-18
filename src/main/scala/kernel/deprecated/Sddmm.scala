@@ -14,7 +14,7 @@ class VecDotVecTree(val dim: Int) extends Module {
 
   // multiply each element of rowQ with each element of rowK and sum them using Vec.reduceTree function
   val sumMultiply = VecInit((io.rowQ.zip(io.rowK)).map { case (a, b) => a * b })
-  io.res := sumMultiply.reduceTree((a, b) => RegNext(a +& b))
+  io.res := sumMultiply.reduceTree((a, b) => RegNext(a +& b), a => RegNext(a))
 
 }
 
