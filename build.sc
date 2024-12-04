@@ -14,6 +14,10 @@ def defaultVersions = Map(
   "chiseltest" -> ivy"edu.berkeley.cs::chiseltest:6.0.0"
 )
 
+def extendDependencies = Map(
+  "hardfloat" -> ivy"edu.berkeley.cs::hardfloat:1.5-SNAPSHOT"
+)
+
 trait HasChisel extends SbtModule {
   def chiselModule: Option[ScalaModule] = None
 
@@ -34,7 +38,7 @@ trait HasChisel extends SbtModule {
 }
 
 object fputil extends HasChisel {
-  override def millSourcePath = os.pwd / "fputil"
+  override def millSourcePath = os.pwd / "depencies" / "fputil" 
 }
 
 trait transformer_MMModule extends ScalaModule {
@@ -66,7 +70,8 @@ object trans extends transformer_MMModule with HasChisel { m =>
   // def mainClass = Some("vitiskernel.VitisRTLKernelVerilog")
   def mainClass = Some("kernel.NewFeatureTest")
   override def ivyDeps = super.ivyDeps() ++ Agg(
-    defaultVersions("chiseltest")
+    defaultVersions("chiseltest"),
+    extendDependencies("hardfloat")
   )
 
   object test extends SbtTests with TestModule.ScalaTest {

@@ -5,6 +5,8 @@ import chisel3.util._
 import kernel.utils.DebugLog
 import fputil.FPMult
 import fputil.FPAdd
+import hardfloat._
+
 trait GEMMAccuracyConfig {
   val I: Int = 4
   val F: Int = 12
@@ -32,25 +34,6 @@ class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
   io.out_h := RegNext(io.in_h)
   io.out_v := RegNext(io.in_v)
   io.out := res
-}
-
-// a * b + c
-class FMA(width: Int = 32) extends Module with DebugLog {
-  val io = IO(new Bundle {
-    val a = Input(Valid(UInt(width.W)))
-    val b = Input(Valid(UInt(width.W)))
-    val c = Input(Valid(UInt(width.W)))
-    val out = Valid(UInt(width.W))
-  })
-
-  // one cycle latency
-  val tmp = FPMult(width)(io.a.bits, io.b.bits, io.a.valid && io.b.valid)
-
-  // three cycle latency
-  val tmpRes = FPAdd(width)(io.c.bits, tmp.bits, io.c.valid && tmp.valid)
-
-  io.out.bits := Mux(tmpRes.valid, tmpRes.bits, io.c.bits)
-  io.out.valid := tmpRes.valid
 }
 
 class PEFp(width: Int = 32, size: Int = 4) extends Module with DebugLog {
