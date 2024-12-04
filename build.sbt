@@ -9,7 +9,6 @@ lazy val commonChiselSettings = Seq(
   libraryDependencies ++= Seq(
     "org.chipsalliance" %% "chisel" % chiselVersion,
     "edu.berkeley.cs" %% "chiseltest" % "6.0.0",
-    // "edu.berkeley.cs" %% "hardfloat" % "1.5.1-SNAPSHOT"
   ),
   resolvers += "aliyun".at("https://maven.aliyun.com/repository/public"),
   scalacOptions ++= Seq(
@@ -24,6 +23,7 @@ lazy val commonChiselSettings = Seq(
 
 lazy val root = (project in file("."))
   .dependsOn(fputil)
+  .dependsOn(hardfloat)
   .settings(
     name := "transformer_MM",
     // fork := true,
@@ -34,6 +34,16 @@ lazy val root = (project in file("."))
 lazy val fputil = Project("fputil", file("depencies/fputil/src"))
   .settings(
     name := "fputil",
+    commonChiselSettings
+  )
+  .settings(
+    Compile / scalaSource := baseDirectory.value / "main" / "scala",
+    Compile / resourceDirectory := baseDirectory.value / "main" / "resources"
+  )
+
+lazy val hardfloat = Project("hardfloat", file("depencies/hardfloat/hardfloat/src"))
+  .settings(
+    name := "hardfloat",
     commonChiselSettings
   )
   .settings(
