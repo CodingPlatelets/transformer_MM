@@ -10,7 +10,7 @@ lazy val commonChiselSettings = Seq(
     "org.chipsalliance" %% "chisel" % chiselVersion,
     "edu.berkeley.cs" %% "chiseltest" % "6.0.0",
   ),
-  resolvers += "aliyun".at("https://maven.aliyun.com/repository/public"),
+  resolvers += "huaweiyun".at("https://repo.huaweicloud.com/repository/maven/"),
   scalacOptions ++= Seq(
     "-language:reflectiveCalls",
     "-deprecation",
