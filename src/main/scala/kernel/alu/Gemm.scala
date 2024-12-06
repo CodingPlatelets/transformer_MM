@@ -8,8 +8,8 @@ import fputil.FPAdd
 import hardfloat._
 
 trait GEMMAccuracyConfig {
-  val I: Int = 4
-  val F: Int = 12
+  val I: Int = 8
+  val F: Int = 24
 }
 
 case class FPConfig(width: Int) {
