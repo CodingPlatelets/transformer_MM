@@ -31,7 +31,7 @@ lazy val root = (project in file("."))
     commonChiselSettings
   )
 
-lazy val fputil = Project("fputil", file("depencies/fputil/src"))
+lazy val fputil = Project("fputil", file("dependencies/fputil/src"))
   .settings(
     name := "fputil",
     commonChiselSettings
@@ -41,7 +41,7 @@ lazy val fputil = Project("fputil", file("depencies/fputil/src"))
     Compile / resourceDirectory := baseDirectory.value / "main" / "resources"
   )
 
-lazy val hardfloat = Project("hardfloat", file("depencies/hardfloat/hardfloat/src"))
+lazy val hardfloat = Project("hardfloat", file("dependencies/hardfloat/hardfloat/src"))
   .settings(
     name := "hardfloat",
     commonChiselSettings

@@ -1,6 +1,6 @@
-[submodule "depencies/fputil"]
-	path = depencies/fputil
-	url = git@github.com:CodingPlatelets/fp-division-pipelined.git
-[submodule "depencies/hardfloat"]
-	path = depencies/hardfloat
+[submodule "dependencies/hardfloat"]
+	path = dependencies/hardfloat
 	url = git@github.com:CodingPlatelets/berkeley-hardfloat.git
+[submodule "dependencies/fputil"]
+	path = dependencies/fputil
+	url = git@github.com:CodingPlatelets/fp-division-pipelined.git

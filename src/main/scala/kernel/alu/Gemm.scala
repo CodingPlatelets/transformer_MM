@@ -12,6 +12,20 @@ trait GEMMAccuracyConfig {
   val F: Int = 12
 }
 
+case class FPConfig(width: Int) {
+  private val fpParams = Map(
+    32 -> (8, 24), // 单精度
+    64 -> (11, 53) // 双精度
+  )
+  val (expWidth, sigWidth) =
+    fpParams.getOrElse(width, throw new IllegalArgumentException(s"Unsupported floating point width: $width"))
+}
+
+object GEMMType extends ChiselEnum {
+  // UInt, FixedPoint, FloatPoint(32), FloatPoint(64)
+  val UI, Fxp, Fp32, Fp64 = Value
+}
+
 class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
   val io = IO(new Bundle {
     val in_h = Input(UInt((I + F).W))
@@ -38,64 +52,57 @@ class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
 
 class PEFp(width: Int = 32, size: Int = 4) extends Module with DebugLog {
   val io = IO(new Bundle {
-    val in_h = Input(Valid(UInt(width.W)))
-    val in_v = Input(Valid(UInt(width.W)))
-    val out_h = Valid(UInt(width.W))
-    val out_v = Valid(UInt(width.W))
+    val in_h = Input(UInt(width.W))
+    val in_v = Input(UInt(width.W))
+    val out_h = Output(UInt(width.W))
+    val out_v = Output(UInt(width.W))
     val out = Output(UInt(width.W))
     val reset = Input(Bool())
   })
 
-  io.out_h <> RegNext(io.in_h)
-  io.out_v <> RegNext(io.in_v)
+  io.out_h := RegNext(io.in_h)
+  io.out_v := RegNext(io.in_v)
 
-  val container = RegInit(0.U(width.W))
-
-  val bufferMul = RegInit(VecInit.fill(size)(0.U(width.W)))
-  val mulTmp = FPMult(width)(io.in_h.bits, io.in_v.bits, io.in_h.valid && io.in_v.valid)
-  val (counter, _) = Counter(0 until size, mulTmp.valid, io.reset)
-
-  bufferMul(counter) := Mux(mulTmp.valid, mulTmp.bits, bufferMul(counter))
-  when(io.reset) {
-    container := 0.U
-  }
-
-  io.out := bufferMul.reduceTree(
-    (a, b) => {
-      val fadd = Module(new FPAdd(width))
-      fadd.io.a.bits := a
-      fadd.io.b.bits := b
-      fadd.io.a.valid := true.B
-      fadd.io.b.valid := true.B
-      fadd.io.res.bits
-    },
-    a => ShiftRegister(a, 3)
-  )
-  debugLog(p"out: ${io.out}, bufferMul: ${bufferMul}, counter: ${counter}\n", LogLevel.DEBUG)
+  val res = RegInit(0.U(width.W))
+  val fpConfig = FPConfig(width)
+  val FCMAModule = Module(new fudian.FCMA(fpConfig.expWidth, fpConfig.sigWidth))
+  FCMAModule.io.a := io.in_h
+  FCMAModule.io.b := io.in_v
+  FCMAModule.io.c := res
+  FCMAModule.io.rm := 0.U
+  res := Mux(io.reset, 0.U, FCMAModule.io.result)
+  io.out := res
+  FCMAModule.io.fflags := DontCare
 }
 
 // Compute A * B, where A and B are both square matrix.
-class GEMM(val n: Int = 4) extends Module with GEMMAccuracyConfig with DebugLog {
+class GEMM(val n: Int = 4, val gemmType: GEMMType.Type)(implicit config: DataTypeConfig)
+    extends Module
+    with GEMMAccuracyConfig
+    with DebugLog {
 
-  val InputA = IO(Flipped(Decoupled(Vec(n, Vec(n, UInt((I + F).W))))))
-  val InputB = IO(Flipped(Decoupled(Vec(n, Vec(n, UInt((I + F).W))))))
-  val OutputPipe = IO(Decoupled(Vec(n * n, UInt((2 * (I + F)).W))))
+  val io = IO(new Bundle {
+    val in_a = Flipped(Decoupled(Vec(n, Vec(n, UInt(config.inputWidth.W)))))
+    val in_b = Flipped(Decoupled(Vec(n, Vec(n, UInt(config.inputWidth.W)))))
+    val out = Decoupled(Vec(n * n, UInt(config.outputWidth.W)))
+    val reset = Input(Bool())
+  })
 
   // accumulate mode
   val accMode = IO(Input(Bool()))
   val accReg = RegInit(false.B)
 
-  val dataValid = InputA.valid && InputB.valid
+  val dataValid = io.in_a.valid && io.in_b.valid
 
   val busy = RegInit(false.B)
 
-  InputA.ready := !busy
-  InputB.ready := !busy
+  io.in_a.ready := !busy
+  io.in_b.ready := !busy
 
-  val matrixAReg = RegInit(VecInit.fill(n)(VecInit.fill(n)(0.U((I + F).W))))
-  val matrixBReg = RegInit(VecInit.fill(n)(VecInit.fill(n)(0.U((I + F).W))))
+  val matrixAReg = RegInit(VecInit.fill(n)(VecInit.fill(n)(0.U(config.inputWidth.W))))
+  val matrixBReg = RegInit(VecInit.fill(n)(VecInit.fill(n)(0.U(config.inputWidth.W))))
 
-  val sysmm = Module(new SystolicMM(n))
+  val sysmm = Module(new SystolicMM(n, gemmType))
   sysmm.io.reset := false.B
   for (i <- 0 until n) {
     sysmm.io.in_a(i) := 0.U
@@ -105,16 +112,16 @@ class GEMM(val n: Int = 4) extends Module with GEMMAccuracyConfig with DebugLog 
   when(dataValid) {
     for (i <- 0 until n) {
       for (j <- 0 until n) {
-        matrixAReg(i)(j) := InputA.bits(i)(j)
-        matrixBReg(i)(j) := InputB.bits(i)(j)
+        matrixAReg(i)(j) := io.in_a.bits(i)(j)
+        matrixBReg(i)(j) := io.in_b.bits(i)(j)
       }
     }
     busy := true.B
   }
 
   val resValid = RegInit(false.B)
-  OutputPipe.valid := resValid
-  OutputPipe.bits := sysmm.io.out
+  io.out.valid := resValid
+  io.out.bits := sysmm.io.out
 
   val cnt = Counter(3 * n)
   when(busy && cnt.value < (2 * n).U) {
@@ -135,7 +142,7 @@ class GEMM(val n: Int = 4) extends Module with GEMMAccuracyConfig with DebugLog 
 
   when(cnt.value === (3 * n - 1).U) {
     resValid := true.B
-    when(OutputPipe.ready) {
+    when(io.out.ready) {
       resValid := false.B
       busy := false.B
       cnt.reset()
@@ -146,21 +153,53 @@ class GEMM(val n: Int = 4) extends Module with GEMMAccuracyConfig with DebugLog 
   // debugLog(p"busy: ${busy} cnt: ${cnt.value}\n", LogLevel.DEBUG)
 }
 
-class SystolicMM(val n: Int = 4) extends Module with GEMMAccuracyConfig with DebugLog {
+trait DataTypeConfig {
+  def inputWidth:  Int
+  def outputWidth: Int
+}
+
+case object FxpConfig extends DataTypeConfig with GEMMAccuracyConfig {
+  def inputWidth:  Int = I + F
+  def outputWidth: Int = 2 * (I + F)
+}
+
+case object Fp32Config extends DataTypeConfig {
+  def inputWidth:  Int = 32
+  def outputWidth: Int = 32
+}
+
+case object Fp64Config extends DataTypeConfig {
+  def inputWidth:  Int = 64
+  def outputWidth: Int = 64
+}
+
+class SystolicMM(val n: Int = 4, val gemmType: GEMMType.Type)(implicit config: DataTypeConfig)
+    extends Module
+    with GEMMAccuracyConfig
+    with DebugLog {
+
   val io = IO(new Bundle {
-    val in_a = Input(Vec(n, UInt((I + F).W))) // horizontal inputs
-    val in_b = Input(Vec(n, UInt((I + F).W))) // vertical inputs
-    val out = Output(Vec(n * n, UInt((2 * (I + F)).W)))
+    val in_a = Input(Vec(n, UInt(config.inputWidth.W)))
+    val in_b = Input(Vec(n, UInt(config.inputWidth.W)))
+    val out = Output(Vec(n * n, UInt(config.outputWidth.W)))
     val reset = Input(Bool())
   })
 
-  val p_elems = VecInit(Seq.fill(n * n) { Module(new PEFxp).io })
+  val peElements = VecInit(Seq.fill(n * n) {
+    gemmType match {
+      case GEMMType.Fxp  => Module(new PEFxp).io
+      case GEMMType.Fp32 => Module(new PEFp(config.inputWidth)).io
+      case GEMMType.Fp64 => Module(new PEFp(config.inputWidth)).io
+      case _             => throw new IllegalArgumentException("Unsupported GEMM type")
+    }
+  })
+
   for (i <- 0 until n * n) {
-    p_elems(i).reset := io.reset
+    peElements(i).reset := io.reset
   }
 
-  val h_wires = Wire(Vec((n - 1) * n, UInt((I + F).W)))
-  val v_wires = Wire(Vec(n * (n - 1), UInt((I + F).W)))
+  val h_wires = Wire(Vec((n - 1) * n, UInt(config.inputWidth.W)))
+  val v_wires = Wire(Vec(n * (n - 1), UInt(config.inputWidth.W)))
 
   def gethidx(r: Int, c: Int): Int = r * (n - 1) + c // last column is terminated
   def getvidx(r: Int, c: Int): Int = r * n + c
@@ -170,29 +209,29 @@ class SystolicMM(val n: Int = 4) extends Module with GEMMAccuracyConfig with Deb
   for (col <- 0 until n) {
     for (row <- 0 until n) {
       val pidx = row * n + col
-      io.out(pidx) := p_elems(pidx).out // results
+      io.out(pidx) := peElements(pidx).out // results
 
       // wiring up PEs
       // horizontal inputs
       if (col == 0) {
-        p_elems(pidx).in_h := io.in_a(row)
+        peElements(pidx).in_h := io.in_a(row)
       } else {
-        p_elems(pidx).in_h := h_wires(gethidx(row, col - 1))
+        peElements(pidx).in_h := h_wires(gethidx(row, col - 1))
       }
       // horizontal outputs to next PEs
       if (col < n - 1) {
-        h_wires(gethidx(row, col)) := p_elems(pidx).out_h
+        h_wires(gethidx(row, col)) := peElements(pidx).out_h
       }
 
       // vertical inputs
       if (row == 0) {
-        p_elems(pidx).in_v := io.in_b(col)
+        peElements(pidx).in_v := io.in_b(col)
       } else {
-        p_elems(pidx).in_v := v_wires(getvidx(row - 1, col))
+        peElements(pidx).in_v := v_wires(getvidx(row - 1, col))
       }
       // vertical outputs to next PEs
       if (row < n - 1) {
-        v_wires(getvidx(row, col)) := p_elems(pidx).out_v
+        v_wires(getvidx(row, col)) := peElements(pidx).out_v
       }
     }
   }

@@ -38,7 +38,7 @@ trait HasChisel extends SbtModule {
 }
 
 object fputil extends HasChisel {
-  override def millSourcePath = os.pwd / "depencies" / "fputil" 
+  override def millSourcePath = os.pwd / "dependencies" / "fputil" 
 }
 
 trait transformer_MMModule extends ScalaModule {
