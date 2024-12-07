@@ -4,8 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.Tag
 import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.ParallelTestExecution
 
-class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
+class GEMMTest extends AnyFlatSpec with ChiselScalatestTester with ParallelTestExecution {
 
   def mmul(a: Array[Array[Float]], b: Array[Array[Float]]): Array[Array[Float]] = {
     for (r <- a) yield {
@@ -104,6 +105,70 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
 
   }
 
+  private def testGEMMFp(dut: GEMM) = {
+    val n = dut.n
+
+    val arraySize = 10
+    val matrixAArray = Array.tabulate(arraySize)(_ => matInit(n))
+    val matrixBArray = Array.tabulate(arraySize)(_ => matInit(n))
+    val matrixYArray = matrixAArray.zip(matrixBArray).map {
+      case (a, b) => mmul(a, b)
+    }
+
+    def checkresult(): List[Float] = {
+      val ret = for (j <- 0 until n * n) yield {
+        val out = java.lang.Float.intBitsToFloat(dut.io.out.bits(j).peekInt().toInt)
+        print(f"${out}%.4f ")
+        out.toFloat // litValue returns BigInt
+      }
+      println()
+      ret.toList
+    }
+
+    fork {
+      var c = 0;
+      while (c < arraySize) {
+        if (dut.io.in_a.ready.peekBoolean() && dut.io.in_b.ready.peekBoolean()) {
+          dut.io.in_a.valid.poke(true.B)
+          dut.io.in_b.valid.poke(true.B)
+          for (i <- 0 until n) {
+            for (j <- 0 until n) {
+              dut.io.in_a.bits(i)(j).poke(BigInt(java.lang.Float.floatToRawIntBits(matrixAArray(c)(i)(j)).toBinaryString, 2).U)
+              dut.io.in_b.bits(i)(j).poke(BigInt(java.lang.Float.floatToRawIntBits(matrixBArray(c)(i)(j)).toBinaryString, 2).U)
+            }
+          }
+          c += 1
+        } else {
+          dut.io.in_a.valid.poke(false.B)
+          dut.io.in_b.valid.poke(false.B)
+        }
+        dut.clock.step()
+      }
+    }.fork {
+      var resC = 0
+      while (resC < arraySize) {
+        if (dut.io.out.valid.peekBoolean()) {
+          dut.io.out.ready.poke(true.B)
+          val out = checkresult()
+          var invalidcnt = 0
+          for (i <- out.zip(matrixYArray(resC).flatten.toList)) {
+            if (math.abs(i._1 - i._2) > precision) {
+              println("Error: " + i._1 + " " + i._2)
+              invalidcnt += 1
+            }
+          }
+          if (invalidcnt == 0) println("GEMM Verification passed!")
+          assert(invalidcnt == 0)
+          resC += 1
+        } else {
+          dut.io.out.ready.poke(false.B)
+        }
+        dut.clock.step()
+      }
+
+    }.join()
+
+  }
   private def testSystolicMM(dut: SystolicMM): Unit = {
     val n = dut.n
     val a = matInit(n)
@@ -161,7 +226,6 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
     val a = matInit(n)
     val b = matInit(n)
     val y = mmul(a, b)
-    println(s"type: ${dut.gemmType}")
     printmat(a)
     printmat(b)
     printmat(y)
@@ -276,15 +340,24 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester {
 
   "SystolicMM basic test on Verilator" should "pass" in {
     implicit val fxpConfig: DataTypeConfig = FxpConfig
-    test(new SystolicMM(4, GEMMType.Fxp)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+    test(new SystolicMM(4, GEMMDataType.Fxp))
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
   }
 
   "SystolicMMFp basic test on Verilator" should "pass" in {
     implicit val fxpConfig: DataTypeConfig = Fp32Config
-    test(new SystolicMM(4, GEMMType.Fp32))
+    test(new SystolicMM(4, GEMMDataType.Fp32))
       .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMMFp)
   }
-  // "GeMM basic test on Verilator" should "pass" in {
-  //   test(new GEMM(6)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
-  // }
+  "GeMM basic test on Verilator" should "pass" in {
+    implicit val fxpConfig: DataTypeConfig = FxpConfig
+    test(new GEMM(6, GEMMDataType.Fxp))
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
+  }
+
+  "GeMMFp basic test on Verilator" should "pass" in {
+    implicit val fxpConfig: DataTypeConfig = Fp32Config
+    test(new GEMM(6, GEMMDataType.Fp32))
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMMFp)
+  }
 }

@@ -9,6 +9,7 @@ lazy val commonChiselSettings = Seq(
   libraryDependencies ++= Seq(
     "org.chipsalliance" %% "chisel" % chiselVersion,
     "edu.berkeley.cs" %% "chiseltest" % "6.0.0",
+    "org.scala-lang.modules" %% "scala-parallel-collections" % "1.0.4"
   ),
   resolvers += "huaweiyun".at("https://repo.huaweicloud.com/repository/maven/"),
   scalacOptions ++= Seq(

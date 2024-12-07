@@ -21,7 +21,7 @@ case class FPConfig(width: Int) {
     fpParams.getOrElse(width, throw new IllegalArgumentException(s"Unsupported floating point width: $width"))
 }
 
-object GEMMType extends ChiselEnum {
+object GEMMDataType extends ChiselEnum {
   // UInt, FixedPoint, FloatPoint(32), FloatPoint(64)
   val UI, Fxp, Fp32, Fp64 = Value
 }
@@ -75,8 +75,90 @@ class PEFp(width: Int = 32, size: Int = 4) extends Module with DebugLog {
   FCMAModule.io.fflags := DontCare
 }
 
+trait DataTypeConfig {
+  def inputWidth:  Int
+  def outputWidth: Int
+}
+
+case object FxpConfig extends DataTypeConfig with GEMMAccuracyConfig {
+  def inputWidth:  Int = I + F
+  def outputWidth: Int = 2 * (I + F)
+}
+
+case object Fp32Config extends DataTypeConfig {
+  def inputWidth:  Int = 32
+  def outputWidth: Int = 32
+}
+
+case object Fp64Config extends DataTypeConfig {
+  def inputWidth:  Int = 64
+  def outputWidth: Int = 64
+}
+
+class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataTypeConfig)
+    extends Module
+    with GEMMAccuracyConfig
+    with DebugLog {
+
+  val io = IO(new Bundle {
+    val in_a = Input(Vec(n, UInt(config.inputWidth.W)))
+    val in_b = Input(Vec(n, UInt(config.inputWidth.W)))
+    val out = Output(Vec(n * n, UInt(config.outputWidth.W)))
+    val reset = Input(Bool())
+  })
+
+  val peElements = VecInit(Seq.fill(n * n) {
+    gemmType match {
+      case GEMMDataType.Fxp  => Module(new PEFxp).io
+      case GEMMDataType.Fp32 => Module(new PEFp(config.inputWidth)).io
+      case GEMMDataType.Fp64 => Module(new PEFp(config.inputWidth)).io
+      case _             => throw new IllegalArgumentException("Unsupported GEMM type")
+    }
+  })
+
+  peElements.foreach(_.reset := io.reset)
+
+  val h_wires = Wire(Vec((n - 1) * n, UInt(config.inputWidth.W)))
+  val v_wires = Wire(Vec(n * (n - 1), UInt(config.inputWidth.W)))
+
+  def gethidx(r: Int, c: Int): Int = r * (n - 1) + c // last column is terminated
+  def getvidx(r: Int, c: Int): Int = r * n + c
+
+  // connecting PEs in a systolic manner
+  // debugLog(p"pe(2,0): ${p_elems(8).in_h}, ${p_elems(8).in_v}, ${p_elems(8).out}\n")
+  for (col <- 0 until n) {
+    for (row <- 0 until n) {
+      val pidx = row * n + col
+      io.out(pidx) := peElements(pidx).out // results
+
+      // wiring up PEs
+      // horizontal inputs
+      if (col == 0) {
+        peElements(pidx).in_h := io.in_a(row)
+      } else {
+        peElements(pidx).in_h := h_wires(gethidx(row, col - 1))
+      }
+      // horizontal outputs to next PEs
+      if (col < n - 1) {
+        h_wires(gethidx(row, col)) := peElements(pidx).out_h
+      }
+
+      // vertical inputs
+      if (row == 0) {
+        peElements(pidx).in_v := io.in_b(col)
+      } else {
+        peElements(pidx).in_v := v_wires(getvidx(row - 1, col))
+      }
+      // vertical outputs to next PEs
+      if (row < n - 1) {
+        v_wires(getvidx(row, col)) := peElements(pidx).out_v
+      }
+    }
+  }
+}
+
 // Compute A * B, where A and B are both square matrix.
-class GEMM(val n: Int = 4, val gemmType: GEMMType.Type)(implicit config: DataTypeConfig)
+class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataTypeConfig)
     extends Module
     with GEMMAccuracyConfig
     with DebugLog {
@@ -151,120 +233,4 @@ class GEMM(val n: Int = 4, val gemmType: GEMMType.Type)(implicit config: DataTyp
   }
 
   // debugLog(p"busy: ${busy} cnt: ${cnt.value}\n", LogLevel.DEBUG)
-}
-
-trait DataTypeConfig {
-  def inputWidth:  Int
-  def outputWidth: Int
-}
-
-case object FxpConfig extends DataTypeConfig with GEMMAccuracyConfig {
-  def inputWidth:  Int = I + F
-  def outputWidth: Int = 2 * (I + F)
-}
-
-case object Fp32Config extends DataTypeConfig {
-  def inputWidth:  Int = 32
-  def outputWidth: Int = 32
-}
-
-case object Fp64Config extends DataTypeConfig {
-  def inputWidth:  Int = 64
-  def outputWidth: Int = 64
-}
-
-class SystolicMM(val n: Int = 4, val gemmType: GEMMType.Type)(implicit config: DataTypeConfig)
-    extends Module
-    with GEMMAccuracyConfig
-    with DebugLog {
-
-  val io = IO(new Bundle {
-    val in_a = Input(Vec(n, UInt(config.inputWidth.W)))
-    val in_b = Input(Vec(n, UInt(config.inputWidth.W)))
-    val out = Output(Vec(n * n, UInt(config.outputWidth.W)))
-    val reset = Input(Bool())
-  })
-
-  val peElements = VecInit(Seq.fill(n * n) {
-    gemmType match {
-      case GEMMType.Fxp  => Module(new PEFxp).io
-      case GEMMType.Fp32 => Module(new PEFp(config.inputWidth)).io
-      case GEMMType.Fp64 => Module(new PEFp(config.inputWidth)).io
-      case _             => throw new IllegalArgumentException("Unsupported GEMM type")
-    }
-  })
-
-  for (i <- 0 until n * n) {
-    peElements(i).reset := io.reset
-  }
-
-  val h_wires = Wire(Vec((n - 1) * n, UInt(config.inputWidth.W)))
-  val v_wires = Wire(Vec(n * (n - 1), UInt(config.inputWidth.W)))
-
-  def gethidx(r: Int, c: Int): Int = r * (n - 1) + c // last column is terminated
-  def getvidx(r: Int, c: Int): Int = r * n + c
-
-  // connecting PEs in a systolic manner
-  // debugLog(p"pe(2,0): ${p_elems(8).in_h}, ${p_elems(8).in_v}, ${p_elems(8).out}\n")
-  for (col <- 0 until n) {
-    for (row <- 0 until n) {
-      val pidx = row * n + col
-      io.out(pidx) := peElements(pidx).out // results
-
-      // wiring up PEs
-      // horizontal inputs
-      if (col == 0) {
-        peElements(pidx).in_h := io.in_a(row)
-      } else {
-        peElements(pidx).in_h := h_wires(gethidx(row, col - 1))
-      }
-      // horizontal outputs to next PEs
-      if (col < n - 1) {
-        h_wires(gethidx(row, col)) := peElements(pidx).out_h
-      }
-
-      // vertical inputs
-      if (row == 0) {
-        peElements(pidx).in_v := io.in_b(col)
-      } else {
-        peElements(pidx).in_v := v_wires(getvidx(row - 1, col))
-      }
-      // vertical outputs to next PEs
-      if (row < n - 1) {
-        v_wires(getvidx(row, col)) := peElements(pidx).out_v
-      }
-    }
-  }
-}
-
-// each ProcElem (PE) is mapped to each element in a NxN output matrix
-class ProcElem(val bits: Int = 8) extends Module {
-  val io = IO(new Bundle {
-    // input from horizontal direction
-    val in_h = Input(UInt(bits.W))
-    // input from vertical direction
-    val in_v = Input(UInt(bits.W))
-    // output to horizontal direction
-    val out_h = Output(UInt((bits * 2).W))
-    // output to vertical direction
-    val out_v = Output(UInt((bits * 2).W))
-    // the result after N cycles once this receives the first actual data
-    val out = Output(UInt((bits * 2).W))
-
-    val reset = Input(Bool())
-  })
-
-  val res = RegInit(0.U((bits * 2).W))
-
-  when(io.reset) {
-    res := 0.U
-  }
-  // this is the main computation part
-  res := res + (io.in_h * io.in_v)
-
-  // inputs are delayed one cycle to next PEs
-  io.out_h := RegNext(io.in_h)
-  io.out_v := RegNext(io.in_v)
-
-  io.out := res
 }
