@@ -4,3 +4,6 @@
 [submodule "dependencies/fputil"]
 	path = dependencies/fputil
 	url = git@github.com:CodingPlatelets/fp-division-pipelined.git
+[submodule "dependencies/fudian"]
+	path = dependencies/fudian
+	url = git@github.com:CodingPlatelets/fudian.git
