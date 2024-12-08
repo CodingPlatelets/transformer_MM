@@ -75,27 +75,27 @@ class PEFp(width: Int = 32, size: Int = 4) extends Module with DebugLog {
   FCMAModule.io.fflags := DontCare
 }
 
-trait DataTypeConfig {
+trait DataWidthConfig {
   def inputWidth:  Int
   def outputWidth: Int
 }
 
-case object FxpConfig extends DataTypeConfig with GEMMAccuracyConfig {
+case object FxpConfig extends DataWidthConfig with GEMMAccuracyConfig {
   def inputWidth:  Int = I + F
   def outputWidth: Int = 2 * (I + F)
 }
 
-case object Fp32Config extends DataTypeConfig {
+case object Fp32Config extends DataWidthConfig {
   def inputWidth:  Int = 32
   def outputWidth: Int = 32
 }
 
-case object Fp64Config extends DataTypeConfig {
+case object Fp64Config extends DataWidthConfig {
   def inputWidth:  Int = 64
   def outputWidth: Int = 64
 }
 
-class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataTypeConfig)
+class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataWidthConfig)
     extends Module
     with GEMMAccuracyConfig
     with DebugLog {
@@ -112,7 +112,7 @@ class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit confi
       case GEMMDataType.Fxp  => Module(new PEFxp).io
       case GEMMDataType.Fp32 => Module(new PEFp(config.inputWidth)).io
       case GEMMDataType.Fp64 => Module(new PEFp(config.inputWidth)).io
-      case _             => throw new IllegalArgumentException("Unsupported GEMM type")
+      case _                 => throw new IllegalArgumentException("Unsupported GEMM type")
     }
   })
 
@@ -158,14 +158,14 @@ class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit confi
 }
 
 // Compute A * B, where A and B are both square matrix.
-class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataTypeConfig)
+class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataWidthConfig)
     extends Module
     with GEMMAccuracyConfig
     with DebugLog {
 
   val io = IO(new Bundle {
-    val in_a = Flipped(Decoupled(Vec(n, Vec(n, UInt(config.inputWidth.W)))))
-    val in_b = Flipped(Decoupled(Vec(n, Vec(n, UInt(config.inputWidth.W)))))
+    val in_a = Flipped(Decoupled(Vec(n * n, UInt(config.inputWidth.W))))
+    val in_b = Flipped(Decoupled(Vec(n * n, UInt(config.inputWidth.W))))
     val out = Decoupled(Vec(n * n, UInt(config.outputWidth.W)))
     val reset = Input(Bool())
   })
@@ -194,8 +194,8 @@ class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: Dat
   when(dataValid) {
     for (i <- 0 until n) {
       for (j <- 0 until n) {
-        matrixAReg(i)(j) := io.in_a.bits(i)(j)
-        matrixBReg(i)(j) := io.in_b.bits(i)(j)
+        matrixAReg(i)(j) := io.in_a.bits(i * n + j)
+        matrixBReg(i)(j) := io.in_b.bits(i * n + j)
       }
     }
     busy := true.B
