@@ -170,10 +170,6 @@ class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: Dat
     val reset = Input(Bool())
   })
 
-  // accumulate mode
-  val accMode = IO(Input(Bool()))
-  val accReg = RegInit(false.B)
-
   val dataValid = io.in_a.valid && io.in_b.valid
 
   val busy = RegInit(false.B)
@@ -228,7 +224,7 @@ class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: Dat
       resValid := false.B
       busy := false.B
       cnt.reset()
-      sysmm.io.reset := true.B
+      sysmm.io.reset := io.reset
     }
   }
 
