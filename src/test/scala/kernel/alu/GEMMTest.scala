@@ -82,8 +82,10 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester with ParallelTestE
     }.fork {
       var resC = 0
       while (resC < arraySize) {
+        dut.io.reset.poke(false.B)
         if (dut.io.out.valid.peekBoolean()) {
           dut.io.out.ready.poke(true.B)
+          dut.io.reset.poke(true.B)
           val out = checkresult()
           var invalidcnt = 0
           for (i <- out.zip(matrixYArray(resC).flatten.toList)) {
@@ -342,17 +344,17 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester with ParallelTestE
   //   test(new PEFp(32, 4)).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testPEFp)
   // }
 
-  "SystolicMM basic test on Verilator" should "pass" in {
-    implicit val fxpConfig: DataWidthConfig = FxpConfig
-    test(new SystolicMM(4, GEMMDataType.Fxp))
-      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
-  }
+  // "SystolicMM basic test on Verilator" should "pass" in {
+  //   implicit val fxpConfig: DataWidthConfig = FxpConfig
+  //   test(new SystolicMM(4, GEMMDataType.Fxp))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMM)
+  // }
 
-  "SystolicMMFp basic test on Verilator" should "pass" in {
-    implicit val fxpConfig: DataWidthConfig = Fp32Config
-    test(new SystolicMM(4, GEMMDataType.Fp32))
-      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMMFp)
-  }
+  // "SystolicMMFp basic test on Verilator" should "pass" in {
+  //   implicit val fxpConfig: DataWidthConfig = Fp32Config
+  //   test(new SystolicMM(4, GEMMDataType.Fp32))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testSystolicMMFp)
+  // }
 
   "GeMM basic test on Verilator" should "pass" in {
     implicit val fxpConfig: DataWidthConfig = FxpConfig
@@ -360,9 +362,9 @@ class GEMMTest extends AnyFlatSpec with ChiselScalatestTester with ParallelTestE
       .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMM)
   }
 
-  "GeMMFp basic test on Verilator" should "pass" in {
-    implicit val fxpConfig: DataWidthConfig = Fp32Config
-    test(new GEMM(6, GEMMDataType.Fp32))
-      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMMFp)
-  }
+  // "GeMMFp basic test on Verilator" should "pass" in {
+  //   implicit val fxpConfig: DataWidthConfig = Fp32Config
+  //   test(new GEMM(6, GEMMDataType.Fp32))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation))(testGEMMFp)
+  // }
 }

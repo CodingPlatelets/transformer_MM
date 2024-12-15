@@ -9,7 +9,7 @@ import hardfloat._
 
 trait GEMMAccuracyConfig {
   val I: Int = 8
-  val F: Int = 24
+  val F: Int = 0
 }
 
 case class FPConfig(width: Int) {
@@ -26,55 +26,6 @@ object GEMMDataType extends ChiselEnum {
   val UI, Fxp, Fp32, Fp64 = Value
 }
 
-class PEFxp extends Module with GEMMAccuracyConfig with DebugLog {
-  val io = IO(new Bundle {
-    val in_h = Input(UInt((I + F).W))
-    val in_v = Input(UInt((I + F).W))
-    val out_h = Output(UInt((I + F).W))
-    val out_v = Output(UInt((I + F).W))
-    val out = Output(UInt((2 * (I + F)).W))
-    val reset = Input(Bool())
-  })
-
-  val res = RegInit(0.U((2 * (I + F)).W))
-
-  when(io.reset) {
-    res := 0.U
-  }.otherwise {
-    val tmp = FxpMulPure(io.in_h, io.in_v)(I, F, I, F)
-    res := FxpAddPure(res, tmp)(I * 2, F * 2, I * 2, F * 2)
-  }
-
-  io.out_h := RegNext(io.in_h)
-  io.out_v := RegNext(io.in_v)
-  io.out := res
-}
-
-class PEFp(width: Int = 32, size: Int = 4) extends Module with DebugLog {
-  val io = IO(new Bundle {
-    val in_h = Input(UInt(width.W))
-    val in_v = Input(UInt(width.W))
-    val out_h = Output(UInt(width.W))
-    val out_v = Output(UInt(width.W))
-    val out = Output(UInt(width.W))
-    val reset = Input(Bool())
-  })
-
-  io.out_h := RegNext(io.in_h)
-  io.out_v := RegNext(io.in_v)
-
-  val res = RegInit(0.U(width.W))
-  val fpConfig = FPConfig(width)
-  val FCMAModule = Module(new fudian.FCMA(fpConfig.expWidth, fpConfig.sigWidth))
-  FCMAModule.io.a := io.in_h
-  FCMAModule.io.b := io.in_v
-  FCMAModule.io.c := res
-  FCMAModule.io.rm := 0.U
-  res := Mux(io.reset, 0.U, FCMAModule.io.result)
-  io.out := res
-  FCMAModule.io.fflags := DontCare
-}
-
 trait DataWidthConfig {
   def inputWidth:  Int
   def outputWidth: Int
@@ -82,7 +33,7 @@ trait DataWidthConfig {
 
 case object FxpConfig extends DataWidthConfig with GEMMAccuracyConfig {
   def inputWidth:  Int = I + F
-  def outputWidth: Int = 2 * (I + F)
+  def outputWidth: Int = I + F
 }
 
 case object Fp32Config extends DataWidthConfig {
@@ -93,6 +44,55 @@ case object Fp32Config extends DataWidthConfig {
 case object Fp64Config extends DataWidthConfig {
   def inputWidth:  Int = 64
   def outputWidth: Int = 64
+}
+
+class PEFxp(implicit config: DataWidthConfig) extends Module with GEMMAccuracyConfig with DebugLog {
+  val io = IO(new Bundle {
+    val in_h = Input(UInt(config.inputWidth.W))
+    val in_v = Input(UInt(config.inputWidth.W))
+    val out_h = Output(UInt(config.inputWidth.W))
+    val out_v = Output(UInt(config.inputWidth.W))
+    val out = Output(UInt(config.outputWidth.W))
+    val reset = Input(Bool())
+  })
+
+  val res = RegInit(0.U(config.outputWidth.W))
+
+  when(io.reset) {
+    res := 0.U
+  }.otherwise {
+    val tmp = FxpMulPure(io.in_h, io.in_v)(I, F, I, F)
+    res := FxpAddPure(res, tmp)(I, F, I, F)
+  }
+
+  io.out_h := RegNext(io.in_h)
+  io.out_v := RegNext(io.in_v)
+  io.out := res
+}
+
+class PEFp(implicit config: DataWidthConfig) extends Module with DebugLog {
+  val io = IO(new Bundle {
+    val in_h = Input(UInt(config.inputWidth.W))
+    val in_v = Input(UInt(config.inputWidth.W))
+    val out_h = Output(UInt(config.inputWidth.W))
+    val out_v = Output(UInt(config.inputWidth.W))
+    val out = Output(UInt(config.outputWidth.W))
+    val reset = Input(Bool())
+  })
+
+  io.out_h := RegNext(io.in_h)
+  io.out_v := RegNext(io.in_v)
+
+  val res = RegInit(0.U(config.inputWidth.W))
+  val fpConfig = FPConfig(config.inputWidth)
+  val FCMAModule = Module(new fudian.FCMA(fpConfig.expWidth, fpConfig.sigWidth))
+  FCMAModule.io.a := io.in_h
+  FCMAModule.io.b := io.in_v
+  FCMAModule.io.c := res
+  FCMAModule.io.rm := 0.U
+  res := Mux(io.reset, 0.U, FCMAModule.io.result)
+  io.out := res
+  FCMAModule.io.fflags := DontCare
 }
 
 class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataWidthConfig)
@@ -110,8 +110,8 @@ class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit confi
   val peElements = VecInit(Seq.fill(n * n) {
     gemmType match {
       case GEMMDataType.Fxp  => Module(new PEFxp).io
-      case GEMMDataType.Fp32 => Module(new PEFp(config.inputWidth)).io
-      case GEMMDataType.Fp64 => Module(new PEFp(config.inputWidth)).io
+      case GEMMDataType.Fp32 => Module(new PEFp).io
+      case GEMMDataType.Fp64 => Module(new PEFp).io
       case _                 => throw new IllegalArgumentException("Unsupported GEMM type")
     }
   })
@@ -210,7 +210,7 @@ class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: Dat
         sysmm.io.in_a(i) := matrixAReg(i)(p(log2Ceil(n) - 1, 0))
         sysmm.io.in_b(i) := matrixBReg(p(log2Ceil(n) - 1, 0))(i)
       }
-      // debugLog(p"in_a${i}: ${sysmm.io.in_a(i)} in_b${i}: ${sysmm.io.in_b(i)}\t")
+      debugLog(p"in_a${i}: ${sysmm.io.in_a(i)} in_b${i}: ${sysmm.io.in_b(i)}\t")
     }
     debugLog(p"\n")
     cnt.inc()
@@ -220,7 +220,8 @@ class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: Dat
 
   when(cnt.value === (3 * n - 1).U) {
     resValid := true.B
-    when(io.out.ready) {
+    // debugLog(p"res: ${sysmm.io.out}\n", LogLevel.DEBUG)
+    when(resValid && io.out.ready) {
       resValid := false.B
       busy := false.B
       cnt.reset()
@@ -228,5 +229,5 @@ class GEMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: Dat
     }
   }
 
-  // debugLog(p"busy: ${busy} cnt: ${cnt.value}\n", LogLevel.DEBUG)
+  // debugLog(p"busy: ${busy} resValid: ${resValid} cnt: ${cnt.value}\n", LogLevel.DEBUG)
 }

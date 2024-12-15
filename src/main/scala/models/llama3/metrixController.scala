@@ -6,7 +6,7 @@ import chisel3.util._
 import kernel.alu.GEMM
 import kernel.alu.GEMMDataType
 import kernel.alu.DataWidthConfig
-
+import kernel.utils.DebugLog
 class metrixController extends Module with llamaConfig {}
 
 class currentSystolicGroupIdx(
@@ -21,7 +21,7 @@ class currentSystolicGroupIdx(
 
   val row = Output(UInt(log2Ceil(m / nk).W))
   val col = Output(UInt(log2Ceil(q / nk).W))
-  val value = Output(Vec(nk * nk, UInt(config.inputWidth.W)))
+  val value = Output(UInt((nk * nk * config.inputWidth).W))
 }
 
 class MatrixSplit(
@@ -101,17 +101,14 @@ class MatrixRestore(
   for (blockRow <- 0 until numBlocksRow) {
     for (blockCol <- 0 until numBlocksCol) {
       val blockIndex = blockRow * numBlocksCol + blockCol
-      val block = io.inBlocks(blockIndex)
+      val block = io.inBlocks(blockIndex).asTypeOf(Vec(nk * nk, UInt(config.inputWidth.W)))
 
       // 解包当前方阵块
-      for (i <- 0 until nk) {
-        for (j <- 0 until nk) {
-          // 计算在输出向量中的位置
-          val flatIndex = (blockRow * nk + i) * p + (blockCol * nk + j)
-          // 从打包的UInt中提取对应位置的元素
-          val elementPos = (nk * nk - 1 - (i * nk + j)) * config.inputWidth
-          io.outMatrix(flatIndex) := block(elementPos + config.inputWidth - 1, elementPos)
-        }
+      for {
+        i <- 0 until nk
+        j <- 0 until nk
+      } {
+        io.outMatrix((blockRow * nk + i) * p + (blockCol * nk + j)) := block(i * nk + j)
       }
     }
   }
@@ -132,6 +129,32 @@ object MatrixRestore {
   }
 }
 
+class BlockMatrixRestore(
+  val nk: Int
+)(
+  implicit config: DataWidthConfig)
+    extends Module {
+  val io = IO(new Bundle {
+    val inBlocks = Input(UInt((nk * nk * config.inputWidth).W))
+    val outMatrix = Output(Vec(nk * nk, UInt(config.inputWidth.W)))
+  })
+
+  io.outMatrix := io.inBlocks.asTypeOf(Vec(nk * nk, UInt(config.inputWidth.W)))
+}
+
+object BlockMatrixRestore {
+  def apply(
+    nk:       Int
+  )(inBlocks: UInt
+  )(
+    implicit config: DataWidthConfig
+  ): Vec[UInt] = {
+    val newBlockMatrixRestore = Module(new BlockMatrixRestore(nk))
+    newBlockMatrixRestore.io.inBlocks := inBlocks
+    newBlockMatrixRestore.io.outMatrix
+  }
+}
+
 /*
  * matrix mul matrix
  * matrixA is [m, p]
@@ -149,7 +172,8 @@ class GenerationMatrixMul(
 )(
   implicit config: DataWidthConfig)
     extends Module
-    with llamaConfig {
+    with llamaConfig
+    with DebugLog {
   // param check
   implicit val nk: Int = k * n
   require(m % nk == 0)
@@ -159,14 +183,18 @@ class GenerationMatrixMul(
   val io = IO(new Bundle {
     val in_a = Flipped(Decoupled(Vec(m * p, UInt(config.inputWidth.W))))
     val in_b = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
-    val result = Decoupled(Vec(m * q, UInt(config.outputWidth.W)))
     val current = ValidIO(new currentSystolicGroupIdx(nk, m, p, q))
     val reset = Input(Bool())
   })
 
   // reshape the input data as block => [rows, cols] [nk, nk]
-  val matrixAReshape = RegInit(MatrixSplit(m, p, nk)(io.in_a.bits))
-  val matrixBReshape = RegInit(MatrixSplit(p, q, nk)(io.in_b.bits))
+  val matrixAReshape = RegInit(VecInit.fill(m / nk * p / nk)(0.U((nk * nk * config.inputWidth).W)))
+  val matrixBReshape = RegInit(VecInit.fill(p / nk * q / nk)(0.U((nk * nk * config.inputWidth).W)))
+  matrixAReshape := MatrixSplit(m, p, nk)(io.in_a.bits)
+  matrixBReshape := MatrixSplit(p, q, nk)(io.in_b.bits)
+
+  // debugLog(p"matrixAReshape: ${matrixAReshape}\n", LogLevel.DEBUG)
+  // debugLog(p"matrixBReshape: ${matrixBReshape}\n", LogLevel.DEBUG)
 
   // systolic alu
   val gemmGroup = Module(new GEMM(nk, gemmType))
@@ -183,8 +211,6 @@ class GenerationMatrixMul(
   val readyReg = RegInit(true.B)
   io.in_a.ready := readyReg
   io.in_b.ready := readyReg
-  val validReg = RegInit(false.B)
-  io.result.valid := validReg
   val dataShapedValid = RegInit(false.B)
   gemmGroup.io.in_a.valid := dataShapedValid
   gemmGroup.io.in_b.valid := dataShapedValid
@@ -196,9 +222,6 @@ class GenerationMatrixMul(
   val blockBIdx = calTimes.value * cols.U + colIdx.value
   val gemmInputA = matrixAReshape(blockAIdx).asTypeOf(Vec(nk * nk, UInt(config.inputWidth.W)))
   val gemmInputB = matrixBReshape(blockBIdx).asTypeOf(Vec(nk * nk, UInt(config.inputWidth.W)))
-
-  val unShapedResult = RegInit(VecInit.fill(m * q / nk / nk)(0.U((nk * nk * config.outputWidth).W)))
-  io.result.bits := MatrixRestore(m, q, nk)(unShapedResult)
 
   gemmGroup.io.in_a.bits := gemmInputA
   gemmGroup.io.in_b.bits := gemmInputB
@@ -229,6 +252,8 @@ class GenerationMatrixMul(
       when(gemmGroup.io.out.valid) {
         val isfinal = calTimes.inc()
         when(isfinal) {
+          // 当这是最后一个值的时候，不要消费这个值
+          gemmGroup.io.out.ready := false.B
           stateReg := state.collect
           gemmGroupReady := false.B
         }
@@ -242,30 +267,39 @@ class GenerationMatrixMul(
       // still has the last gemm block to cal
       when(gemmGroup.io.out.valid) {
         gemmGroup.io.reset := true.B
+        gemmGroup.io.out.ready := true.B
+
         // collect the result of the [rowIdx, colIdx] block
         val afterRowLine = gemmGroup.io.out.bits
-        unShapedResult(rowIdx.value * cols.U + colIdx.value) := afterRowLine.asTypeOf(
-          UInt((nk * nk * config.outputWidth).W)
-        )
 
         // send the current systolic group idx
         io.current.valid := true.B
         io.current.bits.row := rowIdx.value
         io.current.bits.col := colIdx.value
-        io.current.bits.value := afterRowLine
+        io.current.bits.value := afterRowLine.asUInt
 
         val isRowEnd = colIdx.inc()
-        stateReg := Mux(rowIdx.inc() && isRowEnd, state.done, state.cal)
+        when(!isRowEnd) {
+          stateReg := state.cal
+        }.otherwise {
+          val isAllEnd = rowIdx.inc()
+          when(!isAllEnd) {
+            stateReg := state.cal
+          }.otherwise {
+            dataShapedValid := false.B
+            stateReg := state.done
+          }
+        }
       }
     }
 
     is(state.done) {
-      validReg := true.B
-      when(io.result.ready) {
-        validReg := false.B
-        stateReg := state.idle
-        readyReg := true.B
-      }
+      stateReg := state.idle
+      readyReg := true.B
     }
   }
+
+  debugLog(
+    p"stateReg: $stateReg,\t currentValid: ${io.current.valid},\t rowIdx: ${rowIdx.value},\t colIdx: ${colIdx.value},\t gemmValid: ${gemmGroup.io.out.valid}\n"
+  )
 }
