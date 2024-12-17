@@ -24,4 +24,7 @@ trait llamaConfig {
   // DAC for zb, stream for heads
   val stream_size = 8
 
+  // buffer size for gemm-gemm pipeline
+  val bufferSizeGemm = 32
+
 }

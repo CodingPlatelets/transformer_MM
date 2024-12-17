@@ -42,7 +42,7 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
         Array.fill(rows, cols)(
           numeric.fromInt(
             // r.nextInt(math.pow(2, config.inputWidth).toInt) - math.pow(2, config.inputWidth - 1).toInt
-            r.nextInt(16) - 8
+            r.nextInt(4) - 2
           )
         )
       case c if c == classOf[Float] =>
@@ -260,6 +260,8 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
       val in_a = Flipped(Decoupled(Vec(m * p, UInt(config.inputWidth.W))))
       val in_b = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
       val outMatrix = Valid(Vec(nk * nk, UInt(config.inputWidth.W)))
+      val rowIdx = Output(UInt(config.inputWidth.W))
+      val colIdx = Output(UInt(config.inputWidth.W))
     })
 
     val metrixController = Module(new GenerationMatrixMul(k, n, m, p, q, gemmType))
@@ -270,6 +272,8 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
     matrixRestore.io.inBlocks := metrixController.io.current.bits.value
     io.outMatrix.bits := matrixRestore.io.outMatrix
     io.outMatrix.valid := metrixController.io.current.valid
+    io.rowIdx := metrixController.io.current.bits.row
+    io.colIdx := metrixController.io.current.bits.col
   }
 
   private def testMetrixController[T: Numeric: ClassTag](
@@ -328,6 +332,8 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
         }
         // println(s"emptyRes: ${emptyRes.mkString(", ")}")
         // assert(emptyRes.sameElements(finalMatrix))
+        println(s"rowIdx: ${dut.io.rowIdx.peekInt()}")
+        println(s"colIdx: ${dut.io.colIdx.peekInt()}")
         printmat(emptyRes, nk, nk)
       }
       dut.clock.step()
@@ -350,7 +356,7 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
 
   "GenerationMatrixMul" should "correctly multiply matrices" in {
     implicit val config: DataWidthConfig = FxpConfig
-    test(new MetrixControllerWarper(k = 1, n = 2, m = 4, p = 4, q = 4, GEMMDataType.Fxp))
+    test(new MetrixControllerWarper(k = 1, n = 2, m = 4, p = 6, q = 8, GEMMDataType.Fxp))
       .withAnnotations(Seq(VerilatorBackendAnnotation))(testMetrixController[Int])
   }
 }

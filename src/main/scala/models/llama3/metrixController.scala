@@ -303,3 +303,113 @@ class GenerationMatrixMul(
     p"stateReg: $stateReg,\t currentValid: ${io.current.valid},\t rowIdx: ${rowIdx.value},\t colIdx: ${colIdx.value},\t gemmValid: ${gemmGroup.io.out.valid}\n"
   )
 }
+
+/*
+ * using two GenerationMatrixMul Modules(as QKGEN) to do q,k generation simultaneously.
+ * using another GenerationMatrixMul Module(as QKMUL) to do q,k mul.
+ * the output of QKMUL is the final result.
+ * using the output of QKGEN to Stitch the final result.
+ * the k1,n1 are for q,k generation, the k2,n2 are for q,k mul.
+ */
+class QKMul(
+  val k1:       Int,
+  val n1:       Int,
+  val k2:       Int,
+  val n2:       Int,
+  val m:        Int,
+  val p:        Int,
+  val q:        Int,
+  val gemmType: GEMMDataType.Type
+)(
+  implicit config: DataWidthConfig)
+    extends Module
+    with llamaConfig
+    with DebugLog {
+
+  val nk1: Int = k1 * n1
+  val nk2: Int = k2 * n2
+  require(m % nk1 == 0)
+  require(p % nk1 == 0)
+  require(q % nk1 == 0)
+  require(m % nk2 == 0)
+  require(q % nk2 == 0)
+
+  class QKGenerationMatrixMulWarper(
+    val k:          Int,
+    val n:          Int,
+    val m:          Int,
+    val p:          Int,
+    val q:          Int,
+    val gemmType:   GEMMDataType.Type,
+    val bufferSize: Int
+  )(
+    implicit config: DataWidthConfig)
+      extends Module
+      with llamaConfig
+      with DebugLog {
+    val io = IO(new Bundle {
+      val in_a = Flipped(Decoupled(Vec(m * p, UInt(config.inputWidth.W))))
+      val in_b = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
+      val flush = Input(Bool())
+      val outMatrix = Decoupled(new currentSystolicGroupIdx(nk1, m, p, q))
+    })
+
+    val qkGenMul = Module(new GenerationMatrixMul(k1, n1, m, p, q, gemmType))
+    io.in_a <> qkGenMul.io.in_a
+    io.in_b <> qkGenMul.io.in_b
+
+    val currentBuffer = Module(
+      new Queue(
+        new currentSystolicGroupIdx(nk1, m, p, q),
+        entries = bufferSize,
+        pipe = true,
+        flow = false,
+        useSyncReadMem = false,
+        hasFlush = true
+      )
+    )
+
+    // hasFlush must be true
+    currentBuffer.io.flush.get := io.flush
+
+    // ATTENTION: we assert the size of the buffer is huge enough to hold the current systolic group output
+    // we ignore the ready signal of the enq
+    currentBuffer.io.enq.bits := qkGenMul.io.current.bits
+    currentBuffer.io.enq.valid := qkGenMul.io.current.valid
+
+    io.outMatrix <> currentBuffer.io.deq
+  }
+
+  val io = IO(new Bundle {
+    val inputToken = Flipped(Decoupled(Vec(m * p, UInt(config.inputWidth.W))))
+    val weightQ = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
+    val weightK = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
+    val score = Decoupled(Vec(m * q, UInt(config.inputWidth.W)))
+    val resetBuffer = Input(Bool())
+  })
+
+  val qGen = new QKGenerationMatrixMulWarper(k1, n1, m, p, q, gemmType, bufferSizeGemm)
+  val kGen = new QKGenerationMatrixMulWarper(k2, n2, m, p, q, gemmType, bufferSizeGemm)
+
+  qGen.io.in_a <> io.inputToken
+  qGen.io.in_b <> io.weightQ
+  kGen.io.in_a <> io.inputToken
+  kGen.io.in_b <> io.weightQ
+
+  qGen.io.flush := io.resetBuffer
+  kGen.io.flush := io.resetBuffer
+
+  // final result idx
+  val rowIdx = RegInit(0.U(log2Ceil(m / nk2).W))
+  val colIdx = RegInit(0.U(log2Ceil(m / nk2).W))
+  val resValid = RegInit(false.B)
+  io.score.valid := resValid
+
+  val scoreValue = RegInit(VecInit.fill(m * q)(0.U(config.outputWidth.W)))
+  io.score.bits := scoreValue
+
+  when(resValid && io.score.ready) {
+    resValid := false.B
+  }
+
+}
