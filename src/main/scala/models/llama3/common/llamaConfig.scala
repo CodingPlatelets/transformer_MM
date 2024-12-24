@@ -5,6 +5,10 @@ trait llamaConfig {
   val n_layers = 32
   val n_heads: Int = 32
 
+  val m = 16
+  val p = 8
+  val q = 24
+
   // head_dim is the dimension of each head
   val head_dim: Int = dim / n_heads
   val maxN:     Int = 8 * 1024
@@ -18,8 +22,10 @@ trait llamaConfig {
   val bits = 16
 
   // systolic array size
-  val systolicSize = 16
-  val systolicGroupSize = 1
+  val systolicSizeGen = 4
+  val systolicGroupSizeGen = 1
+  val systolicSizeMul = 4
+  val systolicGroupSizeMul = 1
 
   // DAC for zb, stream for heads
   val stream_size = 8

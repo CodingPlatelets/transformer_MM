@@ -9,16 +9,18 @@ import kernel.alu.DataWidthConfig
 import kernel.utils.DebugLog
 class metrixController extends Module with llamaConfig {}
 
+/*
+ * current systolic group idx
+ * @param nk: systolic group dim
+ * @param m: left matrix rows
+ * @param q: right matrix rows
+ */
 class currentSystolicGroupIdx(
-  val nk: Int,
-  val m:  Int,
-  val p:  Int,
-  val q:  Int
 )(
   implicit config: DataWidthConfig)
     extends Bundle
     with llamaConfig {
-
+  val nk: Int = systolicSizeGen * systolicGroupSizeGen
   val row = Output(UInt(log2Ceil(m / nk).W))
   val col = Output(UInt(log2Ceil(q / nk).W))
   val value = Output(UInt((nk * nk * config.inputWidth).W))
@@ -95,7 +97,7 @@ class MatrixRestore(
   val numBlocksRow = m / nk
   val numBlocksCol = p / nk
 
-  // 初始化输出矩阵
+  // initialize the output matrix
   io.outMatrix.foreach(_ := 0.U)
 
   for (blockRow <- 0 until numBlocksRow) {
@@ -163,11 +165,6 @@ object BlockMatrixRestore {
  * designed for QKV generation, but has a output for current systolic group idx
  */
 class GenerationMatrixMul(
-  val k:        Int,
-  val n:        Int,
-  val m:        Int,
-  val p:        Int,
-  val q:        Int,
   val gemmType: GEMMDataType.Type
 )(
   implicit config: DataWidthConfig)
@@ -175,7 +172,7 @@ class GenerationMatrixMul(
     with llamaConfig
     with DebugLog {
   // param check
-  implicit val nk: Int = k * n
+  implicit val nk: Int = systolicSizeGen * systolicGroupSizeGen
   require(m % nk == 0)
   require(p % nk == 0)
   require(q % nk == 0)
@@ -183,7 +180,7 @@ class GenerationMatrixMul(
   val io = IO(new Bundle {
     val in_a = Flipped(Decoupled(Vec(m * p, UInt(config.inputWidth.W))))
     val in_b = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
-    val current = ValidIO(new currentSystolicGroupIdx(nk, m, p, q))
+    val current = ValidIO(new currentSystolicGroupIdx)
     val reset = Input(Bool())
   })
 
@@ -312,13 +309,6 @@ class GenerationMatrixMul(
  * the k1,n1 are for q,k generation, the k2,n2 are for q,k mul.
  */
 class QKMul(
-  val k1:       Int,
-  val n1:       Int,
-  val k2:       Int,
-  val n2:       Int,
-  val m:        Int,
-  val p:        Int,
-  val q:        Int,
   val gemmType: GEMMDataType.Type
 )(
   implicit config: DataWidthConfig)
@@ -326,8 +316,8 @@ class QKMul(
     with llamaConfig
     with DebugLog {
 
-  val nk1: Int = k1 * n1
-  val nk2: Int = k2 * n2
+  val nk1: Int = systolicSizeGen * systolicGroupSizeGen
+  val nk2: Int = systolicSizeMul * systolicGroupSizeMul
   require(m % nk1 == 0)
   require(p % nk1 == 0)
   require(q % nk1 == 0)
@@ -335,11 +325,6 @@ class QKMul(
   require(q % nk2 == 0)
 
   class QKGenerationMatrixMulWarper(
-    val k:          Int,
-    val n:          Int,
-    val m:          Int,
-    val p:          Int,
-    val q:          Int,
     val gemmType:   GEMMDataType.Type,
     val bufferSize: Int
   )(
@@ -351,16 +336,16 @@ class QKMul(
       val in_a = Flipped(Decoupled(Vec(m * p, UInt(config.inputWidth.W))))
       val in_b = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
       val flush = Input(Bool())
-      val outMatrix = Decoupled(new currentSystolicGroupIdx(nk1, m, p, q))
+      val outMatrix = Decoupled(new currentSystolicGroupIdx)
     })
 
-    val qkGenMul = Module(new GenerationMatrixMul(k1, n1, m, p, q, gemmType))
+    val qkGenMul = Module(new GenerationMatrixMul(gemmType))
     io.in_a <> qkGenMul.io.in_a
     io.in_b <> qkGenMul.io.in_b
 
     val currentBuffer = Module(
       new Queue(
-        new currentSystolicGroupIdx(nk1, m, p, q),
+        new currentSystolicGroupIdx,
         entries = bufferSize,
         pipe = true,
         flow = false,
@@ -388,8 +373,8 @@ class QKMul(
     val resetBuffer = Input(Bool())
   })
 
-  val qGen = new QKGenerationMatrixMulWarper(k1, n1, m, p, q, gemmType, bufferSizeGemm)
-  val kGen = new QKGenerationMatrixMulWarper(k2, n2, m, p, q, gemmType, bufferSizeGemm)
+  val qGen = new QKGenerationMatrixMulWarper(gemmType, bufferSizeGemm)
+  val kGen = new QKGenerationMatrixMulWarper(gemmType, bufferSizeGemm)
 
   qGen.io.in_a <> io.inputToken
   qGen.io.in_b <> io.weightQ
@@ -411,5 +396,20 @@ class QKMul(
   when(resValid && io.score.ready) {
     resValid := false.B
   }
+
+}
+
+class GemmPool(
+  val n:        Int,
+  val poolSize: Int,
+  val gemmType: GEMMDataType.Type
+)(
+  implicit config: DataWidthConfig)
+    extends Module
+    with llamaConfig
+    with DebugLog {
+  val io = IO(new Bundle {
+    val in = Flipped(Decoupled(new currentSystolicGroupIdx))
+  })
 
 }
