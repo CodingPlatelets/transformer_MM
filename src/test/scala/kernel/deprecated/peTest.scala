@@ -12,7 +12,7 @@ class PETest extends AnyFreeSpec with Matchers {
   val bit = 8
   val nums = 3
 
-  "PE SPMM should calculate proper MAC" in {
+  "PE SPMM should calculate proper MAC" taggedAs deprecated in {
     simulate(new PE(bit, (0, 0))) { dut =>
       val testLeft = (2 to 2 + nums)
       val testTOP = (4 to 4 + nums)
@@ -38,7 +38,7 @@ class PETest extends AnyFreeSpec with Matchers {
     }
   }
 
-  "PE SDDMM should calculate proper MAC" in {
+  "PE SDDMM should calculate proper MAC" taggedAs deprecated in {
     simulate(new PE(bit, (0, 0))) { dut =>
       val testLeft = (2 to 2 + nums)
       val testTOP = (4 to 4 + nums)

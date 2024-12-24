@@ -5,9 +5,9 @@ trait llamaConfig {
   val n_layers = 32
   val n_heads: Int = 32
 
-  val m = 16
-  val p = 8
-  val q = 24
+  val m = 8
+  val p = 4
+  val q = 12
 
   // head_dim is the dimension of each head
   val head_dim: Int = dim / n_heads

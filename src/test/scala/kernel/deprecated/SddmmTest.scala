@@ -11,7 +11,7 @@ class SddmmTest extends AnyFlatSpec with ChiselScalatestTester {
   val annos = Seq(VerilatorBackendAnnotation)
 
   behavior.of("tester on sddmm")
-  it should "sddmm should calculate in lines" in {
+  it should "sddmm should calculate in lines" taggedAs deprecated in {
     test(new Sddmm(bit, dimV, L, numOfMask, queueSize)).withAnnotations(annos) { dut =>
       val testQ = for (i <- 0 until dimV) yield (i * 2)
       val mask1 = Seq(0, 2, 4, 7)

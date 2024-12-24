@@ -12,7 +12,7 @@ import org.scalatest.matchers.must.Matchers
 class sddmmTreeTest extends AnyFreeSpec with Matchers {
   val dim = 86
 
-  "VecDotVec should calculate proper greatest common denominator" in {
+  "VecDotVec should calculate proper greatest common denominator" in  {
     simulate(new VecDotVecTree(dim)) { dut =>
       val rnd = new scala.util.Random(0)
       val testValues = (1 to dim).map(_ => (1, 1))

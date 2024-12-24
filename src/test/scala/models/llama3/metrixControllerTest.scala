@@ -8,7 +8,11 @@ import org.scalatest.ParallelTestExecution
 import scala.reflect.ClassTag
 import kernel.alu.{DataWidthConfig, Fp32Config, Fp64Config, FxpConfig, GEMMDataType}
 
-class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with ParallelTestExecution {
+class metrixControllerTest
+    extends AnyFlatSpec
+    with ChiselScalatestTester
+    with ParallelTestExecution
+    with common.llamaConfig {
 
   // 辅助函数：矩阵乘法计算
   def mmul[T: Numeric: ClassTag](a: Array[Array[T]], b: Array[Array[T]]): Array[Array[T]] = {
@@ -246,16 +250,12 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
   }
 
   class MetrixControllerWarper(
-    val k:        Int,
-    val n:        Int,
-    val m:        Int,
-    val p:        Int,
-    val q:        Int,
     val gemmType: GEMMDataType.Type
   )(
     implicit config: DataWidthConfig)
-      extends Module {
-    val nk = n * k
+      extends Module
+      with common.llamaConfig {
+    val nk = systolicSizeGen * systolicGroupSizeGen
     val io = IO(new Bundle {
       val in_a = Flipped(Decoupled(Vec(m * p, UInt(config.inputWidth.W))))
       val in_b = Flipped(Decoupled(Vec(p * q, UInt(config.inputWidth.W))))
@@ -264,7 +264,7 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
       val colIdx = Output(UInt(config.inputWidth.W))
     })
 
-    val metrixController = Module(new GenerationMatrixMul(k, n, m, p, q, gemmType))
+    val metrixController = Module(new GenerationMatrixMul(gemmType))
     metrixController.io.in_a <> io.in_a
     metrixController.io.in_b <> io.in_b
     metrixController.io.reset := false.B
@@ -303,7 +303,7 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
       dut.io.in_b.bits(i * q + j).poke(toBinaryBigInt(inputMatrixB(i)(j)).U)
     }
 
-    val nk = dut.n * dut.k
+    val nk = systolicSizeGen * systolicGroupSizeGen
     val finalMatrix = mmul(inputMatrixA, inputMatrixB)
     println(s"inputMatrixA")
     printmat(inputMatrixA)
@@ -356,7 +356,7 @@ class metrixControllerTest extends AnyFlatSpec with ChiselScalatestTester with P
 
   "GenerationMatrixMul" should "correctly multiply matrices" in {
     implicit val config: DataWidthConfig = FxpConfig
-    test(new MetrixControllerWarper(k = 1, n = 2, m = 4, p = 6, q = 8, GEMMDataType.Fxp))
+    test(new MetrixControllerWarper(GEMMDataType.Fxp))
       .withAnnotations(Seq(VerilatorBackendAnnotation))(testMetrixController[Int])
   }
 }

@@ -47,8 +47,8 @@ class FixedPointExp extends Module with SoftmaxAccuracy with DebugLog {
 class Softmax(val arraySize: Int = 4) extends Module with SoftmaxAccuracy with DebugLog {
   val io = IO(new Bundle {
     // val x = Input(Valid(Vec(arraySize, UInt((I + F).W))))
-    val x = Flipped(Decoupled(Vec(arraySize, UInt((I + F).W))))
-    val soft_x = Decoupled(Vec(arraySize, UInt((I + F).W)))
+    val x = Input(Valid(Vec(arraySize, UInt((I + F).W))))
+    val soft_x = Valid(Vec(arraySize, UInt((I + F).W)))
   })
 
   // first find the max value of x

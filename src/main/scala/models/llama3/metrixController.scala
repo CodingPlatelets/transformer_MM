@@ -373,8 +373,8 @@ class QKMul(
     val resetBuffer = Input(Bool())
   })
 
-  val qGen = new QKGenerationMatrixMulWarper(gemmType, bufferSizeGemm)
-  val kGen = new QKGenerationMatrixMulWarper(gemmType, bufferSizeGemm)
+  val qGen = new QKGenerationMatrixMulWarper( gemmType, bufferSizeGemm)
+  val kGen = new QKGenerationMatrixMulWarper( gemmType, bufferSizeGemm)
 
   qGen.io.in_a <> io.inputToken
   qGen.io.in_b <> io.weightQ

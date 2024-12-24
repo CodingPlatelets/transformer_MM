@@ -1,5 +1,4 @@
 package kernel.deprecated
-
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
@@ -18,7 +17,7 @@ class SdpmmOriginTest extends AnyFlatSpec with ChiselScalatestTester {
   // val annos = Seq(VerilatorBackendAnnotation)
 
   behavior.of("tester on sdpmm origin")
-  it should "sdpmmOrigin should calculate in lines" in {
+  it should "sdpmmOrigin should calculate in lines" taggedAs deprecated in {
     test(
       new SdpmmOrigin(
         bit,

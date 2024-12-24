@@ -10,7 +10,7 @@ class SpmmTest extends AnyFlatSpec with ChiselScalatestTester {
   val numOfMask = 3
   val queueSize = 10
   behavior.of("tester on spmm")
-  it should "spmm should calculate in lines" in {
+  it should "spmm should calculate in lines" taggedAs deprecated in {
     test(new SpMM(bit, dimV, L, 1, numOfMask, queueSize)) { dut =>
       var mask1 = Seq(1, 2, 3)
       var mask2 = Seq(1, 4, 6)
