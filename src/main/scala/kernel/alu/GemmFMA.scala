@@ -253,7 +253,6 @@ class GEMMFMASingle(
   val readyReg = RegInit(true.B)
   io.matrixA.ready := readyReg
   io.matrixB.ready := readyReg
-
   io.currentRow.valid := false.B
   io.currentRow.bits := DontCare
 
@@ -321,7 +320,146 @@ class GEMMFMASingle(
   io.done := doneFlag
 }
 
+class GEMMSingleQueue(
+  val m:          Int,
+  val k:          Int,
+  val n:          Int,
+  val PECount:    Int = 16,
+  val gemmType:   GEMMDataType.Type,
+  val bufferSize: Int = 32
+)(
+  implicit config: DataWidthConfig)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val matrixA = Flipped(Decoupled(Vec(m, Vec(k, UInt(config.inputWidth.W))))) // 矩阵A
+    val matrixB = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W))))) // 矩阵B
+    val flush = Input(Bool())
+    val currentRow = Decoupled(new currentRowIndex(m, n))
+    val done = Output(Bool())
+  })
+
+  val currentBuffer = Module(
+    new Queue(
+      new currentRowIndex(m, n),
+      entries = bufferSize,
+      pipe = true,
+      flow = false,
+      useSyncReadMem = false,
+      hasFlush = true
+    )
+  )
+  val gemm = Module(new GEMMFMASingle(m, k, n, PECount, gemmType))
+  gemm.io.matrixA <> io.matrixA
+  gemm.io.matrixB <> io.matrixB
+  currentBuffer.io.flush.get := io.flush
+  currentBuffer.io.enq <> gemm.io.currentRow
+  io.currentRow <> currentBuffer.io.deq
+  io.done := gemm.io.done
+
+}
+
+// first use GEMMFMATotal to get Q and K, then use GEMMFMASingle to get Q*K^T
+// out one row of score matrix
+class QKMulFMASingle(
+  val m:              Int,
+  val k:              Int,
+  val n:              Int,
+  val PECount1:       Int = 16,
+  val PECount2:       Int = 16,
+  val gemmType:       GEMMDataType.Type,
+  val bufferSizeGemm: Int = 32
+)(
+  implicit config: DataWidthConfig)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val inputToken = Flipped(Decoupled(Vec(m, Vec(k, UInt(config.inputWidth.W)))))
+    val weightQ = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W)))))
+    val weightK = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W)))))
+    val scoreRow = Decoupled(new currentRowIndex(m, m))
+    val resetBuffer = Input(Bool())
+    val done = Output(Bool())
+  })
+
+  val dataValid = io.inputToken.valid && io.weightQ.valid && io.weightK.valid
+
+  val readyReg = RegInit(true.B)
+  io.inputToken.ready := readyReg
+  io.weightQ.ready := readyReg
+  io.weightK.ready := readyReg
+  io.scoreRow.valid := false.B
+  io.scoreRow.bits := DontCare
+  io.done := false.B
+
+  //use GEMMFMATotal to get Q and K
+  val qGen = Module(new GEMMFMATotal(m, k, n, PECount1, gemmType))
+  val kGen = Module(new GEMMFMATotal(m, k, n, PECount1, gemmType))
+  qGen.io.matrixA <> io.inputToken
+  qGen.io.matrixB <> io.weightQ
+  kGen.io.matrixA <> io.inputToken
+  kGen.io.matrixB <> io.weightK
+
+  // when qGen and kGen are done, use GEMMFMASingle to get Q*K^T
+  // Q: m * n, K: m * n -> Q*K^T: m * m
+  val QK_TMul = Module(new GEMMSingleQueue(m, n, m, PECount2, gemmType, bufferSizeGemm))
+  QK_TMul.io.matrixA <> qGen.io.results
+
+  val K_T = VecInit(Seq.fill(n)(VecInit(Seq.fill(m)(0.U(config.inputWidth.W)))))
+  for (i <- 0 until k) {
+    for (j <- 0 until n) {
+      K_T(i)(j) := kGen.io.results.bits(j)(i)
+    }
+  }
+
+  QK_TMul.io.matrixB.valid := kGen.io.results.valid
+  // QK_TMul.io.matrixB.bits := VecInit(kGen.io.results.bits.transpose.map(VecInit(_)))
+  QK_TMul.io.matrixB.bits := K_T
+  kGen.io.results.ready := QK_TMul.io.matrixB.ready
+
+  QK_TMul.io.flush := io.resetBuffer
+  io.scoreRow <> QK_TMul.io.currentRow
+
+  object state extends ChiselEnum {
+    val idle, gen, mul, collect, done = Value
+  }
+  val stateReg = RegInit(state.idle)
+
+  switch(stateReg) {
+    is(state.idle) {
+      when(dataValid) {
+        readyReg := false.B
+        stateReg := state.gen
+      }
+    }
+    is(state.gen) {
+      when(qGen.io.results.valid && kGen.io.results.valid) {
+        debugLog(p"qGen results: ${qGen.io.results.bits}\n")
+        debugLog(p"kGen results: ${kGen.io.results.bits}\n")
+        stateReg := state.mul
+      }
+    }
+    is(state.mul) {
+      when(QK_TMul.io.currentRow.valid) {
+        stateReg := state.collect
+      }
+    }
+    is(state.collect) {
+      when(QK_TMul.io.done) {
+        stateReg := state.done
+      }
+    }
+    is(state.done) {
+      io.done := true.B
+      readyReg := true.B
+      stateReg := state.idle
+    }
+  }
+
+}
+
 // TODO: 优化,bug
+//first use GEMMFMATotal to get Q and K, then use GEMMFMASingle to get Q*K^T
 class QKMulFMA(
   val m:              Int,
   val k:              Int,
