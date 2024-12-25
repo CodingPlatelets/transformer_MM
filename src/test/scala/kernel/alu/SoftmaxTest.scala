@@ -7,6 +7,7 @@ import fixedpoint._
 import java.io._
 import kernel.configs.SdpmmConfigs
 import os.write
+import java.lang.Float
 
 class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestTester {
 
@@ -73,8 +74,8 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
   }
 
   val arraySize = 4
-  it should "pass softmax test" in {
-    test(new Softmax(arraySize))
+  it should "pass softmaxPE test" in {
+    test(new SoftmaxPE(arraySize))
       .withAnnotations(annos) { dut =>
         val rseed = 4
         val rnd = new scala.util.Random(rseed)
@@ -97,8 +98,9 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
         fork {
           dut.io.x.valid.poke(true.B)
           for (i <- 0 until arraySize) {
-            println(s"testQ($i): ${doubleToFixedPoint(testQ(i), I, F)}")
-            dut.io.x.bits(i).poke(doubleToFixedPoint(testQ(i), I, F).U)
+            println(s"testQ($i): ${testQ(i)}")
+            dut.io.x.bits(i).poke(Float.floatToRawIntBits(testQ(i)).U)
+            println(s"dut.io.x.bits($i): ${Float.floatToRawIntBits(testQ(i))}")
           }
           dut.clock.step()
           dut.io.x.valid.poke(false.B)
@@ -109,7 +111,62 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
             clk += 1
           }
           for (i <- 0 until arraySize) {
-            val computedValue = dut.io.soft_x.bits(i).peekInt().toFloat / pow2
+            val computedValue = Float.intBitsToFloat(dut.io.soft_x.bits(i).peekInt().toInt)
+            val relativeError = ((resultSoftmax(i) - computedValue) / resultSoftmax(i)).abs * 100
+            println(
+              s"actualValue is ${resultSoftmax(i)},\t computedValue is $computedValue,\t relativeError is $relativeError"
+            )
+            // assert(relativeError < 5)
+          }
+          println(s"clk: $clk")
+          dut.clock.step()
+          dut.io.soft_x.valid.expect(false.B)
+        }.join()
+
+      }
+  }
+  val numPE = 16
+  val queueDepth = 100
+  it should "pass softmax test" in {
+    test(new Softmax(arraySize,numPE,queueDepth))
+      .withAnnotations(annos) { dut =>
+        dut.clock.setTimeout(500) // 将超时设置为 2000 个周期
+        val rseed = 4
+        val rnd = new scala.util.Random(rseed)
+        val testQ = Seq.tabulate(arraySize)(_ => rnd.nextFloat())
+
+        val maxInQ = testQ.max
+        val expInQ = testQ.map(x => scala.math.exp(x - maxInQ))
+        val sumExpInQ = expInQ.sum
+        val resultSoftmax = expInQ.map(_ / sumExpInQ)
+
+        println(s"testQ: ${testQ}")
+        println(s"resultSoftmax: ${resultSoftmax}")
+        println(s"maxInResult: ${resultSoftmax.max}")
+
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
+        dut.clock.step()
+
+        fork {
+          dut.io.x.valid.poke(true.B)
+          for (i <- 0 until arraySize) {
+            println(s"testQ($i): ${testQ(i)}")
+            dut.io.x.bits(i).poke(Float.floatToRawIntBits(testQ(i)).U)
+            println(s"dut.io.x.bits($i): ${Float.floatToRawIntBits(testQ(i))}")
+          }
+          dut.clock.step()
+          
+          dut.io.x.valid.poke(false.B)
+        }.fork {
+          var clk = 0
+          while (!dut.io.soft_x.valid.peekBoolean()) {
+            dut.clock.step()
+            clk += 1
+          }
+          for (i <- 0 until arraySize) {
+            val computedValue = Float.intBitsToFloat(dut.io.soft_x.bits(i).peekInt().toInt)
             val relativeError = ((resultSoftmax(i) - computedValue) / resultSoftmax(i)).abs * 100
             println(
               s"actualValue is ${resultSoftmax(i)},\t computedValue is $computedValue,\t relativeError is $relativeError"
