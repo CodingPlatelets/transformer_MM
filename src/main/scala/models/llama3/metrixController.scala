@@ -373,8 +373,8 @@ class QKMul(
     val resetBuffer = Input(Bool())
   })
 
-  val qGen = new QKGenerationMatrixMulWarper( gemmType, bufferSizeGemm)
-  val kGen = new QKGenerationMatrixMulWarper( gemmType, bufferSizeGemm)
+  val qGen = new QKGenerationMatrixMulWarper(gemmType, bufferSizeGemm)
+  val kGen = new QKGenerationMatrixMulWarper(gemmType, bufferSizeGemm)
 
   qGen.io.in_a <> io.inputToken
   qGen.io.in_b <> io.weightQ
@@ -399,6 +399,8 @@ class QKMul(
 
 }
 
+// a pool of gemm pe for just one line of input
+// try Mux1H or PriorityMux?
 class GemmPool(
   val n:        Int,
   val poolSize: Int,
@@ -409,7 +411,47 @@ class GemmPool(
     with llamaConfig
     with DebugLog {
   val io = IO(new Bundle {
-    val in = Flipped(Decoupled(new currentSystolicGroupIdx))
+    // implicit a context here
+    val in = Flipped(Decoupled(new Bundle {
+      val a = new currentSystolicGroupIdx
+      val b = new currentSystolicGroupIdx
+    }))
+    val reset = Input(new Bundle {
+      // can reset each gemm unit, 0 is for the whole pool
+      val id = UInt(log2Ceil(poolSize).W)
+      val reset = Bool()
+    })
+    val out = Decoupled(new currentSystolicGroupIdx)
   })
+
+  val gemmUnits = VecInit.fill(poolSize)(Module(new GEMM(n, gemmType)).io)
+
+  val outBuffer = Module(
+    new Queue(
+      new currentSystolicGroupIdx,
+      entries = poolSize,
+      pipe = true,
+      flow = false,
+      useSyncReadMem = false,
+      hasFlush = true
+    )
+  )
+  outBuffer.io.flush.get := Mux(io.reset.id === 0.U, io.reset.reset, false.B)
+  outBuffer.io.deq <> io.out
+
+  // placement reg, point to the gemm unit which is free, start from 0
+  val placementReg = RegInit(0.U(log2Ceil(poolSize).W))
+
+  // if every gemm is full, then ready is false
+  val readyGemmUnit =
+    VecInit(gemmUnits.map(gemmUnit => gemmUnit.in_a.ready & gemmUnit.in_b.ready)).reduceTree(_ & _)
+  io.in.ready := readyGemmUnit
+
+
+  // require the a row equals to b col
+  val context = io.in.bits.a.row
+  when(io.in.valid) {
+
+  }
 
 }

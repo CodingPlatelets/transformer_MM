@@ -7,3 +7,6 @@
 [submodule "dependencies/fudian"]
 	path = dependencies/fudian
 	url = git@github.com:CodingPlatelets/fudian.git
+[submodule "dependencies/fputil-nopipe"]
+	path = dependencies/fputil-nopipe
+	url = git@github.com:CodingPlatelets/fp-division-no-pipeline.git

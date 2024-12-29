@@ -24,6 +24,7 @@ lazy val commonChiselSettings = Seq(
 
 lazy val root = (project in file("."))
   .dependsOn(fputil)
+  .dependsOn(fputilNopipe)
   .dependsOn(hardfloat)
   .settings(
     name := "transformer_MM",
@@ -41,7 +42,15 @@ lazy val fputil = Project("fputil", file("dependencies/fputil/src"))
     Compile / scalaSource := baseDirectory.value / "main" / "scala",
     Compile / resourceDirectory := baseDirectory.value / "main" / "resources"
   )
-
+lazy val fputilNopipe = Project("fputilNopipe", file("dependencies/fputil-nopipe/src"))
+  .settings(
+    name := "fputilNopipe",
+    commonChiselSettings
+  )
+  .settings(
+    Compile / scalaSource := baseDirectory.value / "main" / "scala",
+    Compile / resourceDirectory := baseDirectory.value / "main" / "resources"
+  )
 lazy val hardfloat = Project("hardfloat", file("dependencies/hardfloat/hardfloat/src"))
   .settings(
     name := "hardfloat",
