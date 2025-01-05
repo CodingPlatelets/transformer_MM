@@ -934,6 +934,7 @@ class GEMMFMATest extends AnyFlatSpec with ChiselScalatestTester with ParallelTe
     if (invalidcnt == 0) println("Verification passed!")
     else println(s"Verification failed with $invalidcnt errors.")
   }
+
   private def testAttnScoresTotal[T: Numeric: ClassTag](
     dut: AttnScoresTotal
   )(
@@ -1012,9 +1013,156 @@ class GEMMFMATest extends AnyFlatSpec with ChiselScalatestTester with ParallelTe
     else println(s"Verification failed with $invalidcnt errors.")
   }
 
+  private def testOutValue[T: Numeric: ClassTag](
+    dut: OutValue
+  )(
+    implicit config: DataWidthConfig
+  ): Unit = {
+    val m = dut.m
+    val n = dut.n
+    val gemmType = dut.gemmType
+
+    val AttnWeights = matInit[T](m, m)
+    val Value = matInit[T](m, n)
+    val expectedResults = mmul(AttnWeights, Value)
+
+    if (dut.io.AttnWeights.ready.peekBoolean() && dut.io.Value.ready.peekBoolean()) {
+      println("AttnWeights and Value are ready")
+      dut.io.AttnWeights.valid.poke(true.B)
+      dut.io.Value.valid.poke(true.B)
+      for (row <- 0 until m) {
+        for (col <- 0 until n) {
+          for (i <- 0 until m) {
+            dut.io.AttnWeights.bits(row)(i).poke(toBinaryBigInt(AttnWeights(row)(i)).U)
+            dut.io.Value.bits(i)(col).poke(toBinaryBigInt(Value(i)(col)).U)
+          }
+        }
+      }
+    } else {
+      dut.io.AttnWeights.valid.poke(false.B)
+      dut.io.Value.valid.poke(false.B)
+    }
+
+    while (!dut.io.AttnOut.valid.peekBoolean()) {
+      dut.clock.step()
+    }
+
+    dut.io.AttnOut.ready.poke(true.B)
+    val precision = 0.001f
+    var invalidcnt = 0
+    for (row <- 0 until m) {
+      for (col <- 0 until n) {
+        val outBigInt = dut.io.AttnOut.bits(row)(col).peekInt()
+        val out = fromBinaryBigInt[T](outBigInt)
+        val expected = expectedResults(row)(col)
+        val isInvalid = (implicitly[ClassTag[T]].runtimeClass match {
+          case c if c == classOf[Float] =>
+            math.abs(out.asInstanceOf[Float] - expected.asInstanceOf[Float]) > precision
+          case c if c == classOf[Double] =>
+            math.abs(out.asInstanceOf[Double] - expected.asInstanceOf[Double]) > precision
+
+          case c if c == classOf[Int] =>
+            math.abs(out.asInstanceOf[Int] - expected.asInstanceOf[Int]) > precision
+          case _ =>
+            throw new IllegalArgumentException(s"Unsupported type: ${implicitly[ClassTag[T]].runtimeClass}")
+
+        })
+        if (isInvalid) {
+          println("Error: row: " + row + " col: " + col)
+          printmat(Array(Array(out)))
+          printmat(Array(Array(expected)))
+          invalidcnt += 1
+        }
+      }
+    }
+    if (invalidcnt == 0) println("Verification passed!")
+    else println(s"Verification failed with $invalidcnt errors.")
+  }
+
+  private def testOutValueSingle[T: Numeric: ClassTag](
+    dut: OutValueSingle
+  )(
+    implicit config: DataWidthConfig
+  ): Unit = {
+    val m = dut.m
+    val n = dut.n
+    val gemmType = dut.gemmType
+
+    val AttnWeights = matInit[T](m, m)
+    val Value = matInit[T](m, n)
+    val expectedResults = mmul(AttnWeights, Value)
+    printmat(AttnWeights)
+    printmat(Value)
+    printmat(expectedResults)
+
+    val precision = 0.001f
+    var invalidcnt = 0
+    for (index <- 0 until m) {
+      println("index: " + index)
+      if (dut.io.currentAttnW.ready.peekBoolean() && dut.io.Value.ready.peekBoolean()) {
+        println("currentAttnW index :" + index + " and Value are ready")
+
+        dut.io.currentAttnW.valid.poke(true.B)
+        dut.io.Value.valid.poke(true.B)
+        for (i <- 0 until m) {
+          dut.io.currentAttnW.bits.value(i).poke(toBinaryBigInt(AttnWeights(index)(i)).U)
+          for (j <- 0 until n) {
+            dut.io.Value.bits(i)(j).poke(toBinaryBigInt(Value(i)(j)).U)
+          }
+        }
+
+      } else {
+        dut.io.currentAttnW.valid.poke(false.B)
+        dut.io.Value.valid.poke(false.B)
+      }
+      while (!dut.io.currentAttnO.valid.peekBoolean()) {
+        dut.io.currentAttnO.ready.poke(false.B)
+        dut.clock.step()
+      }
+
+      dut.io.currentAttnO.ready.poke(true.B)
+
+      val currentRowIndex = dut.io.currentAttnO.bits.index.peekInt()
+      // println("currentRow index:" + currentRowIndex + " expected: " + index)
+      for (i <- 0 until n) {
+        val outBigInt = dut.io.currentAttnO.bits.value(i).peekInt()
+        val out = fromBinaryBigInt[T](outBigInt)
+        val expected = expectedResults(currentRowIndex.toInt)(i)
+
+        val isInvalid = (implicitly[ClassTag[T]].runtimeClass match {
+          case c if c == classOf[Float] =>
+            math.abs(out.asInstanceOf[Float] - expected.asInstanceOf[Float]) > precision
+          case c if c == classOf[Double] =>
+            math.abs(out.asInstanceOf[Double] - expected.asInstanceOf[Double]) > precision
+
+          case c if c == classOf[Int] =>
+            math.abs(out.asInstanceOf[Int] - expected.asInstanceOf[Int]) > precision
+          case _ =>
+            throw new IllegalArgumentException(s"Unsupported type: ${implicitly[ClassTag[T]].runtimeClass}")
+        })
+        if (isInvalid) {
+          println("Error: " + i)
+          printmat(Array(Array(out)))
+          printmat(Array(Array(expected)))
+          invalidcnt += 1
+        }
+      }
+      dut.clock.step()
+
+    }
+
+    // while (!dut.io.done.peekBoolean()) {
+    //   dut.clock.step()
+    // }
+
+    if (invalidcnt == 0) println("Verification passed!")
+    else println(s"Verification failed with $invalidcnt errors.")
+  }
+
   // ===--::--===
   //  below tests ERROR
   // ===--::--===
+
 
   // "AttnScoresTotal " should "compute fxp matrix multiplication" in {
   //   implicit val config: DataWidthConfig = FxpConfig
@@ -1043,6 +1191,22 @@ class GEMMFMATest extends AnyFlatSpec with ChiselScalatestTester with ParallelTe
   // ===--::--===
   //  below tests PASS
   // ===--::--===
+
+  // "OutValueSingle " should "compute fxp matrix multiplication" in {
+  //   implicit val config: DataWidthConfig = FxpConfig
+  //   test(new OutValueSingle(m = 8, n = 12, peCount = 4, gemmType = GEMMDataType.Fxp))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+  //       testOutValueSingle[Int](dut)
+  //     }
+  // }
+
+  // "OutValue " should "compute fxp matrix multiplication" in {
+  //   implicit val config: DataWidthConfig = FxpConfig
+  //   test(new OutValue(m = 8, n = 8, peCount = 4, gemmType = GEMMDataType.Fxp))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+  //       testOutValue[Int](dut)
+  //     }
+  // }
 
   // "QKMulTotal " should "compute fxp matrix multiplication" in {
   //   implicit val config: DataWidthConfig = FxpConfig

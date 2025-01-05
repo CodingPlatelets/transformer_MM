@@ -1042,3 +1042,148 @@ class AttnScores(
 
 }
 
+// OutValue: get the final output value
+// input: AttnWeights: m * m
+// input: Value: m * n
+// output: AttnOut: m * n
+class OutValue(
+  val m:        Int,
+  val n:        Int,
+  val peCount:  Int = 16,
+  val gemmType: GEMMDataType.Type
+)(
+  implicit config: DataWidthConfig)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val AttnWeights = Flipped(Decoupled(Vec(m, Vec(m, UInt(config.inputWidth.W)))))
+    val Value = Flipped(Decoupled(Vec(m, Vec(n, UInt(config.inputWidth.W)))))
+    val AttnOut = Decoupled(Vec(m, Vec(n, UInt(config.outputWidth.W))))
+  })
+
+  val dataValid = io.AttnWeights.valid && io.Value.valid
+
+  val readyReg = RegInit(true.B)
+  io.AttnWeights.ready := readyReg
+  io.Value.ready := readyReg
+  io.AttnOut.valid := false.B
+  io.AttnOut.bits := DontCare
+
+  val ValueMul = Module(new GEMMFMATotal(m, m, n, peCount, gemmType))
+
+  ValueMul.io.matrixA.valid := io.AttnWeights.valid
+  ValueMul.io.matrixA.bits := io.AttnWeights.bits
+  ValueMul.io.matrixB.valid := io.Value.valid
+  ValueMul.io.matrixB.bits := io.Value.bits
+  ValueMul.io.results.ready := true.B
+
+  io.AttnOut.valid := ValueMul.io.results.valid
+  io.AttnOut.bits := ValueMul.io.results.bits
+
+}
+
+// OutValue: get the final output value
+// input: one row of AttnWeights: 1 * m ,total m rows
+// input: Value: m * n
+// output: one row of AttnOut: 1 * n ,total m rows
+// output: done: Bool
+class OutValueSingle(
+  val m:        Int,
+  val n:        Int,
+  val peCount:  Int = 16,
+  val gemmType: GEMMDataType.Type
+)(
+  implicit config: DataWidthConfig)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val currentAttnW = Flipped(Decoupled(new currentRowIndex(m, m)))
+    val Value = Flipped(Decoupled(Vec(m, Vec(n, UInt(config.inputWidth.W)))))
+    val currentAttnO = Decoupled(new currentRowIndex(m, n))
+    val done = Output(Bool())
+  })
+
+  val dataValid = io.currentAttnW.valid && io.Value.valid
+
+  val readyReg = RegInit(true.B)
+  io.currentAttnW.ready := readyReg
+  io.Value.ready := readyReg
+  io.currentAttnO.valid := false.B
+  io.currentAttnO.bits := DontCare
+  io.done := false.B
+
+  val multiFMA = Module(new MultiFMA(m, peCount, gemmType))
+
+  val rowIndex = Counter(m)
+  val colIndex = Counter(n / peCount)
+
+  multiFMA.io.matrixA_row.valid := io.currentAttnW.valid
+  multiFMA.io.matrixA_row.bits := io.currentAttnW.bits.value
+
+  multiFMA.io.matrixB_cols.valid := io.Value.valid
+  multiFMA.io.matrixB_cols.bits := VecInit(Seq.tabulate(m) { j =>
+    VecInit(Seq.tabulate(peCount) { i =>
+      io.Value.bits(j)((colIndex.value * peCount.U + i.U) % n.U)
+    })
+  }) //m * peCount size block of Value
+
+  multiFMA.io.reset := false.B
+  multiFMA.io.blockResult.ready := true.B
+
+  val currentRowReg = Reg(Vec(n, UInt(config.outputWidth.W)))
+
+  object state extends ChiselEnum {
+    val idle, compute, update, done = Value
+  }
+
+  val stateReg = RegInit(state.idle)
+
+  switch(stateReg) {
+    is(state.idle) {
+      when(dataValid) {
+        // readyReg := false.B
+        stateReg := state.compute
+      }
+    }
+
+    is(state.compute) {
+      multiFMA.io.reset := false.B
+      // printf(p"multiFMA.io.matrixA_row.bits: ${multiFMA.io.matrixA_row.bits}\n")
+      // printf(p"multiFMA.io.matrixB_cols.bits: ${multiFMA.io.matrixB_cols.bits}\n")
+
+      when(multiFMA.io.blockResult.valid) {
+        for (i <- 0 until peCount) {
+          currentRowReg(colIndex.value * peCount.U + i.U) := multiFMA.io.blockResult.bits(i)
+        }
+        stateReg := state.update
+      }
+    }
+
+    is(state.update) {
+      multiFMA.io.reset := true.B
+      io.currentAttnO.valid := false.B
+      when(colIndex.inc()) {
+        io.currentAttnO.valid := true.B
+        io.currentAttnO.bits.index := rowIndex.value
+        io.currentAttnO.bits.value := currentRowReg
+        // readyReg := true.B
+        // io.currentAttnO.ready := true.B
+        // io.Value.ready := true.B
+        when(rowIndex.inc()) {
+          stateReg := state.done
+        }.otherwise {
+          stateReg := state.compute  
+          // wait for next row of AttnWeights
+        }
+      }.otherwise {
+        stateReg := state.compute
+      }
+
+    }
+    is(state.done) {
+      io.done := true.B
+      readyReg := true.B
+      stateReg := state.idle
+    }
+  }
+}
