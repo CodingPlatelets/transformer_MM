@@ -7,82 +7,6 @@ import fputil.FPMult
 import fputil.FPAdd
 import hardfloat._
 
-// class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit config: DataWidthConfig)
-//     extends Module
-//     with GEMMAccuracyConfig
-//     with DebugLog {
-
-//   val io = IO(new Bundle {
-//     val in_a = Input(Vec(n, UInt(config.inputWidth.W)))
-//     val in_b = Input(Vec(n, UInt(config.inputWidth.W)))
-//     val out = Output(Vec(n * n, UInt(config.outputWidth.W)))
-//     val reset = Input(Bool())
-//   })
-
-//   val peElements = VecInit(Seq.fill(n * n) {
-//     gemmType match {
-//       case GEMMDataType.Fxp  => Module(new PEFxp).io
-//       case GEMMDataType.Fp32 => Module(new PEFp).io
-//       case GEMMDataType.Fp64 => Module(new PEFp).io
-//       case _                 => throw new IllegalArgumentException("Unsupported GEMM type")
-//     }
-//   })
-
-//   peElements.foreach(_.reset := io.reset)
-
-//   val h_wires = Wire(Vec((n - 1) * n, UInt(config.inputWidth.W)))
-//   val v_wires = Wire(Vec(n * (n - 1), UInt(config.inputWidth.W)))
-
-//   def gethidx(r: Int, c: Int): Int = r * (n - 1) + c // last column is terminated
-//   def getvidx(r: Int, c: Int): Int = r * n + c
-
-//   // connecting PEs in a systolic manner
-//   // debugLog(p"pe(2,0): ${p_elems(8).in_h}, ${p_elems(8).in_v}, ${p_elems(8).out}\n")
-//   for (col <- 0 until n) {
-//     for (row <- 0 until n) {
-//       val pidx = row * n + col
-//       io.out(pidx) := peElements(pidx).out // results
-
-//       // wiring up PEs
-//       // horizontal inputs
-//       if (col == 0) {
-//         peElements(pidx).in_h := io.in_a(row)
-//       } else {
-//         peElements(pidx).in_h := h_wires(gethidx(row, col - 1))
-//       }
-//       // horizontal outputs to next PEs
-//       if (col < n - 1) {
-//         h_wires(gethidx(row, col)) := peElements(pidx).out_h
-//       }
-
-//       // vertical inputs
-//       if (row == 0) {
-//         peElements(pidx).in_v := io.in_b(col)
-//       } else {
-//         peElements(pidx).in_v := v_wires(getvidx(row - 1, col))
-//       }
-//       // vertical outputs to next PEs
-//       if (row < n - 1) {
-//         v_wires(getvidx(row, col)) := peElements(pidx).out_v
-//       }
-//     }
-//   }
-//   // for (row <- 0 until n) {
-//   //   for (col <- 0 until n) {
-//   //     val pidx = row * n + col
-//   //     debugLog(p"${peElements(pidx).out} ", LogLevel.DEBUG)
-//   //   }
-//   //   debugLog(p"\n", LogLevel.DEBUG)
-//   // }
-//   // for (col <- 0 until n) {
-//   //   for (row <- 0 until n) {
-//   //     val pidx = row * n + col
-//   //     debugLog(p"${io.out(pidx)} ", LogLevel.DEBUG)
-//   //   }
-//   //   debugLog(p"\n", LogLevel.DEBUG)
-//   // }
-// }
-
 // Compute A * B = C, where A is p*m, B is m*q, C is p*q 
 class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int = 128, val gemmType: GEMMDataType.Type) (implicit config: DataWidthConfig)
     extends Module
@@ -162,7 +86,7 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
           for (j <- 0 until n) {
             val row = rowIndex.value * n.U + i.U
             val col = colIndex.value * n.U + j.U
-            debugLog(p"row: ${row} col: ${col} value: ${sysmm.io.out(i * n + j)} \n", LogLevel.DEBUG)
+            //debugLog(p"row: ${row} col: ${col} value: ${sysmm.io.out(i * n + j)} \n", LogLevel.DEBUG)
             ResultReg(row)(col) := sysmm.io.out(i * n + j)
           }
         }
