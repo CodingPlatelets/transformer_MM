@@ -85,18 +85,18 @@ class OutValueSingle(
     extends Module
     with DebugLog {
   val io = IO(new Bundle {
-    val currentScores = Flipped(Decoupled(new currentRowIndex(m, m)))
+    val curScores = Flipped(Decoupled(new curRowIndex(m, m)))
     val Value = Flipped(Decoupled(Vec(m, Vec(n, UInt(config.inputWidth.W)))))
-    val currentAttnOut = Decoupled(new currentRowIndex(m, n))
+    val curAttnOut = Decoupled(new curRowIndex(m, n))
     val done = Output(Bool())
   })
 
-  val dataValid = io.currentScores.valid && io.Value.valid
+  val dataValid = io.curScores.valid && io.Value.valid
 
-  io.currentScores.ready := true.B
+  io.curScores.ready := true.B
   io.Value.ready := true.B
-  io.currentAttnOut.valid := false.B
-  io.currentAttnOut.bits := DontCare
+  io.curAttnOut.valid := false.B
+  io.curAttnOut.bits := DontCare
   io.done := false.B
 
   val ValueReg = Reg(Vec(m, Vec(n, UInt(config.inputWidth.W))))
@@ -107,8 +107,8 @@ class OutValueSingle(
   val rowIndex = Counter(m)
   val colIndex = Counter(n / peCount)
 
-  multiFMA.io.matrixA_row.valid := io.currentScores.valid
-  multiFMA.io.matrixA_row.bits := io.currentScores.bits.value
+  multiFMA.io.matrixA_row.valid := io.curScores.valid
+  multiFMA.io.matrixA_row.bits := io.curScores.bits.value
 
   multiFMA.io.matrixB_cols.valid := io.Value.valid
   multiFMA.io.matrixB_cols.bits := VecInit(Seq.tabulate(m) { j =>
@@ -120,7 +120,7 @@ class OutValueSingle(
   multiFMA.io.reset := true.B
   multiFMA.io.blockResult.ready := false.B
 
-  val currentRowReg = Reg(Vec(n, UInt(config.outputWidth.W)))
+  val curRowReg = Reg(Vec(n, UInt(config.outputWidth.W)))
 
   object state extends ChiselEnum {
     val idle, compute, update, load, done = Value
@@ -136,12 +136,12 @@ class OutValueSingle(
       }
     }
     is(state.compute) {
-      io.currentScores.ready := false.B
+      io.curScores.ready := false.B
       multiFMA.io.reset := false.B
       multiFMA.io.blockResult.ready := true.B
       when(multiFMA.io.blockResult.valid) {
         for (i <- 0 until peCount) {
-          currentRowReg(colIndex.value * peCount.U + i.U) := multiFMA.io.blockResult.bits(i)
+          curRowReg(colIndex.value * peCount.U + i.U) := multiFMA.io.blockResult.bits(i)
         }
         stateReg := state.update
       }
@@ -149,11 +149,11 @@ class OutValueSingle(
     is(state.update) {
       multiFMA.io.reset := true.B
       multiFMA.io.blockResult.ready := false.B
-      io.currentAttnOut.valid := false.B
+      io.curAttnOut.valid := false.B
       when(colIndex.inc()) {
-        io.currentAttnOut.valid := true.B
-        io.currentAttnOut.bits.index := rowIndex.value
-        io.currentAttnOut.bits.value := currentRowReg
+        io.curAttnOut.valid := true.B
+        io.curAttnOut.bits.index := rowIndex.value
+        io.curAttnOut.bits.value := curRowReg
         when(rowIndex.inc()) {
           stateReg := state.done
         }.otherwise {
@@ -164,13 +164,13 @@ class OutValueSingle(
       }
     }
     is(state.load) {
-      io.currentScores.ready := true.B
+      io.curScores.ready := true.B
       stateReg := state.compute
     }
     is(state.done) {
       io.done := true.B
       io.Value.ready := true.B
-      io.currentScores.ready := true.B
+      io.curScores.ready := true.B
       stateReg := state.idle
     }
   }

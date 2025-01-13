@@ -94,7 +94,7 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
     val Query = matInit[T](m, n)
     val Key = matInit[T](m, n)
     val expectedResults = mmul(Query, Key.transpose)
-    
+
     println("Query:")
     printmat(Query)
     println("Key:")
@@ -106,7 +106,7 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
       println("Query and Key are ready")
       dut.io.Query.valid.poke(true.B)
       dut.io.Key.valid.poke(true.B)
-      
+
       for {
         row <- 0 until m
         col <- 0 until n
@@ -126,7 +126,7 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.scores.ready.poke(true.B)
     val precision = 0.001f
     var invalidcnt = 0
-    
+
     for {
       row <- 0 until m
       col <- 0 until m
@@ -138,6 +138,65 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
         case Some(_) => invalidcnt += 1
         case None    => // right
       }
+    }
+
+    if (invalidcnt == 0) println("Verification passed!")
+    else println(s"Verification failed with $invalidcnt errors.")
+  }
+
+  private def testQKMulSingle[T: Numeric: ClassTag](
+    dut: QKMulSingle
+  )(
+    implicit config: DataWidthConfig
+  ): Unit = {
+    val m = dut.m
+    val n = dut.n
+    val peCount = dut.peCount
+    val gemmType = dut.gemmType
+
+    val Query = matInit[T](m, n)
+    val Key = matInit[T](m, n)
+    val expectedResults = mmul(Query, Key.transpose)
+
+    printmat(Query)
+    printmat(Key)
+    printmat(expectedResults)
+
+    if (dut.io.Query.ready.peekBoolean() && dut.io.Key.ready.peekBoolean()) {
+      println("Query and Key are ready")
+      dut.io.Query.valid.poke(true.B)
+      dut.io.Key.valid.poke(true.B)
+      for {
+        row <- 0 until m
+        col <- 0 until n
+      } {
+        dut.io.Query.bits(row)(col).poke(toBinaryBigInt(Query(row)(col)).U)
+        dut.io.Key.bits(row)(col).poke(toBinaryBigInt(Key(row)(col)).U)
+      }
+    } else {
+      dut.io.Query.valid.poke(false.B)
+      dut.io.Key.valid.poke(false.B)
+    }
+
+    val precision = 0.001f
+    var invalidcnt = 0
+
+    while (!dut.io.done.peekBoolean()) {
+      if (dut.io.curRowScores.valid.peekBoolean()) {
+        val currentRowIndex = dut.io.curRowScores.bits.index.peekInt()
+        println(s"currentRow index: $currentRowIndex")
+
+        for (i <- 0 until m) {
+          val outBigInt = dut.io.curRowScores.bits.value(i).peekInt()
+          val out = fromBinaryBigInt[T](outBigInt)
+          val expected = expectedResults(currentRowIndex.toInt)(i)
+          checkResult(out, expected, currentRowIndex.toInt, i, precision) match {
+            case Some(_) => invalidcnt += 1
+            case None    => // right
+          }
+        }
+      }
+      dut.clock.step()
     }
 
     if (invalidcnt == 0) println("Verification passed!")
@@ -160,7 +219,7 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
     val Query = mmul(inputToken, weightQ)
     val Key = mmul(inputToken, weightK)
     val expectedResults = mmul(Query, Key.transpose)
-    
+
     print("Query:\n")
     printmat(Query)
     print("Key:\n")
@@ -169,15 +228,15 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
     printmat(expectedResults)
 
     if (
-      dut.io.inputToken.ready.peekBoolean() && 
-      dut.io.weightQ.ready.peekBoolean() && 
+      dut.io.inputToken.ready.peekBoolean() &&
+      dut.io.weightQ.ready.peekBoolean() &&
       dut.io.weightK.ready.peekBoolean()
     ) {
       println("inputToken, weightQ and weightK are ready")
       dut.io.inputToken.valid.poke(true.B)
       dut.io.weightQ.valid.poke(true.B)
       dut.io.weightK.valid.poke(true.B)
-      
+
       for {
         row <- 0 until m
         col <- 0 until n
@@ -200,7 +259,7 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.scores.ready.poke(true.B)
     val precision = 0.001f
     var invalidcnt = 0
-    
+
     for {
       row <- 0 until m
       col <- 0 until m
@@ -216,19 +275,200 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
     if (invalidcnt == 0) println("Verification passed!")
     else println(s"Verification failed with $invalidcnt errors.")
   }
-  // "AttnScoresTotal " should "compute fxp matrix multiplication" in {
+
+  private def testAttnScoresSingle[T: Numeric: ClassTag](
+    dut: AttnScoresSingle
+  )(
+    implicit config: DataWidthConfig
+  ): Unit = {
+    val m = dut.m
+    val k = dut.k
+    val n = dut.n
+    val gemmType = dut.gemmType
+
+    val inputToken = matInit[T](m, k)
+    val weightQ = matInit[T](k, n)
+    val weightK = matInit[T](k, n)
+    val Query = mmul(inputToken, weightQ)
+    val Key = mmul(inputToken, weightK)
+    val expectedResults = mmul(Query, Key.transpose)
+
+    print("Query:\n")
+    printmat(Query)
+    print("Key:\n")
+    printmat(Key)
+    print("expectedResults:\n")
+    printmat(expectedResults)
+
+    if (
+      dut.io.inputToken.ready.peekBoolean() &&
+      dut.io.weightQ.ready.peekBoolean() &&
+      dut.io.weightK.ready.peekBoolean()
+    ) {
+      println("inputToken, weightQ and weightK are ready")
+      dut.io.inputToken.valid.poke(true.B)
+      dut.io.weightQ.valid.poke(true.B)
+      dut.io.weightK.valid.poke(true.B)
+
+      for {
+        row <- 0 until m
+        col <- 0 until n
+        i <- 0 until k
+      } {
+        dut.io.inputToken.bits(row)(i).poke(toBinaryBigInt(inputToken(row)(i)).U)
+        dut.io.weightQ.bits(i)(col).poke(toBinaryBigInt(weightQ(i)(col)).U)
+        dut.io.weightK.bits(i)(col).poke(toBinaryBigInt(weightK(i)(col)).U)
+      }
+    } else {
+      dut.io.inputToken.valid.poke(false.B)
+      dut.io.weightQ.valid.poke(false.B)
+      dut.io.weightK.valid.poke(false.B)
+    }
+
+    val precision = 0.001f
+    var invalidcnt = 0
+
+    while (!dut.io.done.peekBoolean()) {
+      if (dut.io.curRowScores.valid.peekBoolean()) {
+        val currentRowIndex = dut.io.curRowScores.bits.index.peekInt()
+        println(s"currentRow index: $currentRowIndex")
+
+        for (i <- 0 until m) {
+          val outBigInt = dut.io.curRowScores.bits.value(i).peekInt()
+          val out = fromBinaryBigInt[T](outBigInt)
+          val expected = expectedResults(currentRowIndex.toInt)(i)
+          checkResult(out, expected, currentRowIndex.toInt, i, precision) match {
+            case Some(_) => invalidcnt += 1
+            case None    => // right
+          }
+        }
+      }
+      dut.clock.step()
+    }
+
+    if (invalidcnt == 0) println("Verification passed!")
+    else println(s"Verification failed with $invalidcnt errors.")
+  }
+
+  private def testAttnScoresSingleQueue[T: Numeric: ClassTag](
+    dut: AttnScoresSingleQueue
+  )(
+    implicit config: DataWidthConfig
+  ): Unit = {
+    val m = dut.m
+    val k = dut.k
+    val n = dut.n
+    val gemmType = dut.gemmType
+
+    val inputToken = matInit[T](m, k)
+    val weightQ = matInit[T](k, n)
+    val weightK = matInit[T](k, n)
+    val Query = mmul(inputToken, weightQ)
+    val Key = mmul(inputToken, weightK)
+    val expectedResults = mmul(Query, Key.transpose)
+
+    print("Query:\n")
+    printmat(Query)
+    print("Key:\n")
+    printmat(Key)
+    print("expectedResults:\n")
+    printmat(expectedResults)
+    dut.io.flush.poke(true.B)
+    dut.clock.step(1)
+    dut.io.flush.poke(false.B)
+    if (
+      dut.io.inputToken.ready.peekBoolean() &&
+      dut.io.weightQ.ready.peekBoolean() &&
+      dut.io.weightK.ready.peekBoolean()
+    ) {
+      println("inputToken, weightQ and weightK are ready")
+      dut.io.inputToken.valid.poke(true.B)
+      dut.io.weightQ.valid.poke(true.B)
+      dut.io.weightK.valid.poke(true.B)
+
+      for {
+        row <- 0 until m
+        col <- 0 until n
+        i <- 0 until k
+      } {
+        dut.io.inputToken.bits(row)(i).poke(toBinaryBigInt(inputToken(row)(i)).U)
+        dut.io.weightQ.bits(i)(col).poke(toBinaryBigInt(weightQ(i)(col)).U)
+        dut.io.weightK.bits(i)(col).poke(toBinaryBigInt(weightK(i)(col)).U)
+      }
+    } else {
+      dut.io.inputToken.valid.poke(false.B)
+      dut.io.weightQ.valid.poke(false.B)
+      dut.io.weightK.valid.poke(false.B)
+    }
+
+    val precision = 0.001f
+    var invalidcnt = 0
+
+    while (!dut.io.done.peekBoolean()) {
+      if (dut.io.curRowScores.valid.peekBoolean()) {
+        val currentRowIndex = dut.io.curRowScores.bits.index.peekInt()
+        println(s"currentRow index: $currentRowIndex")
+
+        for (i <- 0 until m) {
+          val outBigInt = dut.io.curRowScores.bits.value(i).peekInt()
+          val out = fromBinaryBigInt[T](outBigInt)
+          val expected = expectedResults(currentRowIndex.toInt)(i)
+          checkResult(out, expected, currentRowIndex.toInt, i, precision) match {
+            case Some(_) => invalidcnt += 1
+            case None    => // right
+          }
+        }
+      }
+      dut.clock.step()
+    }
+
+    if (invalidcnt == 0) println("Verification passed!")
+    else println(s"Verification failed with $invalidcnt errors.")
+  }
+
+  // "AttnScoresSingleQueue " should "compute fxp matrix multiplication" in {
   //   implicit val config: DataWidthConfig = FxpConfig
-  //   test(new AttnScoresTotal(m = 4, k = 4, n = 4, peCount = 4, gemmType = GEMMDataType.Fxp))
+  //   test(new AttnScoresSingleQueue(m = 8, k = 8, n = 8, peCount = 4, gemmType = GEMMDataType.Fxp))
   //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
-  //       testAttnScoresTotal[Int](dut)
+  //       testAttnScoresSingleQueue[Int](dut)
   //     }
   // }
 
+  "AttnScoresSingleQueue " should "compute fxp matrix multiplication" in {
+    implicit val config: DataWidthConfig = FxpConfig
+    test(new AttnScoresSingleQueue(m = 8, k = 8, n = 8, peCount = 4, gemmType = GEMMDataType.Fxp))
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+        testAttnScoresSingleQueue[Int](dut)
+      }
+  }
+
+  // "AttnScoresSingle " should "compute fxp matrix multiplication" in {
+  //   implicit val config: DataWidthConfig = FxpConfig
+  //   test(new AttnScoresSingle(m = 8, k = 8, n = 8, peCount = 4, gemmType = GEMMDataType.Fxp))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+  //       testAttnScoresSingle[Int](dut)
+  //     }
+  // }
+
+  // "AttnScoresSingle " should "compute fp32 matrix multiplication" in {
+  //   implicit val config: DataWidthConfig = Fp32Config
+  //   test(new AttnScoresSingle(m = 8, k = 8, n = 8, peCount = 4, gemmType = GEMMDataType.Fp32))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+  //       testAttnScoresSingle[Float](dut)
+  //     }
+  // }
   // "QKMul " should "compute fxp matrix multiplication" in {
   //   implicit val config: DataWidthConfig = FxpConfig
-  //   test(new QKMul(m = 4, n = 4, peCount = 4, gemmType = GEMMDataType.Fxp))
+  //   test(new QKMul(m = 8, n = 12, peCount = 4, gemmType = GEMMDataType.Fxp))
   //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
   //       testQKMul[Int](dut)
+  //     }
+  // }
+  // "QKMulSingle " should "compute fxp matrix multiplication" in {
+  //   implicit val config: DataWidthConfig = FxpConfig
+  //   test(new QKMulSingle(m = 8, n = 12, peCount = 4, gemmType = GEMMDataType.Fxp))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+  //       testQKMulSingle[Int](dut)
   //     }
   // }
 //   "AttnScores " should "compute fxp matrix multiplication" in {
@@ -263,13 +503,13 @@ class AttnScoresTest extends AnyFlatSpec with ChiselScalatestTester {
 //       }
 //   }
 
-  "QKGen " should "compute fxp matrix multiplication" in {
-    implicit val config: DataWidthConfig = FxpConfig
-    test(new QKGen(m = 8, k = 8, n = 8, peCount = 4, gemmType = GEMMDataType.Fxp))
-      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
-        testQKGen[Int](dut)
-      }
-  }
+  // "QKGen " should "compute fxp matrix multiplication" in {
+  //   implicit val config: DataWidthConfig = FxpConfig
+  //   test(new QKGen(m = 8, k = 8, n = 8, peCount = 4, gemmType = GEMMDataType.Fxp))
+  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+  //       testQKGen[Int](dut)
+  //     }
+  // }
 
 //   "QKGenWithReg " should "compute fxp matrix multiplication" in {
 //     implicit val config: DataWidthConfig = FxpConfig

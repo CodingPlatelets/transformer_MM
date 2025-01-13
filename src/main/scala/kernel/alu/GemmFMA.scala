@@ -7,7 +7,7 @@ import kernel.alu.DataWidthConfig
 import kernel.utils.DebugLog
 import kernel.deprecated.PE
 
-class currentRowIndex(
+class curRowIndex(
   val m: Int,
   val n: Int
 )(
@@ -77,72 +77,87 @@ class MultiFMA(
     optIndex := optIndex + 1.U
   }
 
-  // TODO: FSM :reset logic is not correct, need to be fixed
-
-  // pes.foreach { pe =>
-  //   pe.in_h := 0.U
-  //   pe.in_v := 0.U
-  //   pe.reset := DontCare
-  // }
-
-  // io.blockResult.valid := validReg
-  // io.blockResult.bits := DontCare
-
-  // object state extends ChiselEnum {
-  //   val idle, reset, compute, update, done = Value
-  // }
-  // val stateReg = RegInit(state.idle)
-
-  // switch(stateReg) {
-  //   is(state.idle) {
-  //     when(dataValid) {
-  //       readyReg := false.B
-  //       stateReg := state.compute
-  //     }
-  //   }
-  //   is(state.compute) {
-  //     when(io.reset) {
-  //       stateReg := state.reset
-  //     }
-  //     for (i <- 0 until peCount) {
-  //       pes(i).reset := io.reset
-  //       pes(i).in_h := io.matrixA_row.bits(optIndex)
-  //       pes(i).in_v := io.matrixB_cols.bits(optIndex)(i)
-  //       io.blockResult.bits(i) := pes(i).out
-  //     }
-
-  //     // printf(p"optIndex: ${optIndex}\n")
-  //     // printf(p"io.matrixA_row.bits(${optIndex}): ${io.matrixA_row.bits(optIndex)}\n")
-  //     // for (i <- 0 until peCount) {
-  //     //   printf(p"pe: $i\n")
-  //     //   printf(p"io.matrixB_cols.bits(${optIndex})($i): ${io.matrixB_cols.bits(optIndex)(i)}\n")
-  //     //   printf(p"io.blockResult.bits(${i}): ${io.blockResult.bits(i)}\n")
-  //     // }
-  //     stateReg := state.update
-  //   }
-  //   is(state.reset) {
-  //     optIndex := 0.U
-  //     validReg := false.B
-  //     stateReg := state.idle
-  //   }
-  //   is(state.update) {
-  //     validReg := false.B
-  //     when(optIndex === (k - 1).U) {
-  //       stateReg := state.done
-  //     }.otherwise {
-  //       optIndex := optIndex + 1.U
-  //       stateReg := state.compute
-  //     }
-  //   }
-  //   is(state.done) {
-  //     optIndex := 0.U
-  //     readyReg := true.B
-  //     validReg := true.B
-  //     stateReg := state.idle
-  //   }
-  // }
 }
 
+class MultiFMA_v2(
+  val k:        Int,
+  val peCount:  Int,
+  val gemmType: GEMMDataType.Type
+)(
+  implicit config: DataWidthConfig)
+    extends Module
+    with DebugLog {
+  val io = IO(new Bundle {
+    val matrixA_row = Flipped(Decoupled(Vec(k, UInt(config.inputWidth.W))))
+    val matrixB_cols = Flipped(Decoupled(Vec(k, Vec(peCount, UInt(config.inputWidth.W)))))
+    val blockResult = Decoupled(Vec(peCount, UInt(config.outputWidth.W)))
+    val reset = Input(Bool())
+  })
+
+  val dataValid = io.matrixA_row.valid && io.matrixB_cols.valid
+
+  val readyReg = RegInit(true.B)
+  io.matrixA_row.ready := readyReg
+  io.matrixB_cols.ready := readyReg
+  io.blockResult.valid := false.B
+  io.blockResult.bits := DontCare
+
+  val pes = Seq.fill(peCount)(gemmType match {
+    case GEMMDataType.Fxp  => Module(new PEFxp()).io
+    case GEMMDataType.Fp32 => Module(new PEFp()).io
+    case GEMMDataType.Fp64 => Module(new PEFp()).io
+    case _                 => throw new IllegalArgumentException("Unsupported GEMM type")
+  })
+
+  val optIndex = Counter(k)
+
+  pes.foreach { pe =>
+    pe.in_h := 0.U
+    pe.in_v := 0.U
+    pe.reset := DontCare
+  }
+
+  object state extends ChiselEnum {
+    val idle, compute, update, done = Value
+  }
+  val stateReg = RegInit(state.idle)
+
+  switch(stateReg) {
+    is(state.idle) {
+      when(io.reset) {
+        optIndex.reset()
+        for (i <- 0 until peCount) {
+          pes(i).reset := true.B
+        }
+      }
+      when(dataValid) {
+        readyReg := false.B
+        stateReg := state.compute
+      }
+    }
+    is(state.compute) {
+      for (i <- 0 until peCount) {
+        pes(i).reset := false.B
+        pes(i).in_h := io.matrixA_row.bits(optIndex.value)
+        pes(i).in_v := io.matrixB_cols.bits(optIndex.value)(i)
+        io.blockResult.bits(i) := pes(i).out
+      }
+      stateReg := state.update
+    }
+    is(state.update) {
+      when(optIndex.inc()) {
+        stateReg := state.done
+      }.otherwise {
+        stateReg := state.compute
+      }
+    }
+    is(state.done) {
+      readyReg := true.B
+      io.blockResult.valid := true.B
+      stateReg := state.idle
+    }
+  }
+}
 // input: matrixA: m * k
 // input: matrixB: k * n
 // output: matrixC: m * n
@@ -171,7 +186,7 @@ class GEMMFMATotal(
   io.results.valid := false.B
   io.results.bits := DontCare
 
-  val multiFMA = Module(new MultiFMA(k, peCount, gemmType))
+  val multiFMA = Module(new MultiFMA_v2(k, peCount, gemmType))
 
   val rowIndex = Counter(m)
   val colIndex = Counter(n / peCount)
@@ -182,7 +197,7 @@ class GEMMFMATotal(
   multiFMA.io.matrixB_cols.valid := io.matrixB.valid
   multiFMA.io.matrixB_cols.bits := VecInit(Seq.tabulate(k) { j =>
     VecInit(Seq.tabulate(peCount) { i =>
-      io.matrixB.bits(j)((colIndex.value * peCount.U + i.U) % n.U)
+      io.matrixB.bits(j)((colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0))
     })
   }) //k * peCount size block of matrixB
 
@@ -209,7 +224,8 @@ class GEMMFMATotal(
       multiFMA.io.blockResult.ready := true.B
       when(multiFMA.io.blockResult.valid) {
         for (i <- 0 until peCount) {
-          resultsReg(rowIndex.value)((colIndex.value * peCount.U + i.U) % n.U) := multiFMA.io.blockResult.bits(i)
+          resultsReg(rowIndex.value)((colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0)) := multiFMA.io.blockResult
+            .bits(i)
         }
         stateReg := state.update
       }
@@ -241,7 +257,7 @@ class GEMMFMATotal(
 
 //input: matrixA: m * k
 //input: matrixB: k * n
-//output: currentRowIndex: one row of matrixC: 1 * n and current row index
+//output: curRowIndex: one row of matrixC: 1 * n and cur row index
 //output: done: total matrixC finish flag
 class GEMMFMASingle(
   val m:        Int,
@@ -257,7 +273,7 @@ class GEMMFMASingle(
   val io = IO(new Bundle {
     val matrixA = Flipped(Decoupled(Vec(m, Vec(k, UInt(config.inputWidth.W)))))
     val matrixB = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W)))))
-    val currentRow = Decoupled(new currentRowIndex(m, n))
+    val curRow = Decoupled(new curRowIndex(m, n))
     val done = Output(Bool())
   })
 
@@ -265,8 +281,8 @@ class GEMMFMASingle(
   val readyReg = RegInit(true.B)
   io.matrixA.ready := readyReg
   io.matrixB.ready := readyReg
-  io.currentRow.valid := false.B
-  io.currentRow.bits := DontCare
+  io.curRow.valid := false.B
+  io.curRow.bits := DontCare
   io.done := false.B
 
   val multiFMA = Module(new MultiFMA(k, peCount, gemmType))
@@ -280,14 +296,14 @@ class GEMMFMASingle(
   multiFMA.io.matrixB_cols.valid := io.matrixB.valid
   multiFMA.io.matrixB_cols.bits := VecInit(Seq.tabulate(k) { j =>
     VecInit(Seq.tabulate(peCount) { i =>
-      io.matrixB.bits(j)((colIndex.value * peCount.U + i.U) % n.U)
+      io.matrixB.bits(j)((colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0))
     })
   }) //k * peCount size block of matrixB
 
-  multiFMA.io.reset := false.B
-  multiFMA.io.blockResult.ready := true.B
+  multiFMA.io.reset := true.B
+  multiFMA.io.blockResult.ready := false.B
 
-  val currentRowReg = Reg(Vec(n, UInt(config.outputWidth.W)))
+  val curRowReg = Reg(Vec(n, UInt(config.outputWidth.W)))
 
   object state extends ChiselEnum {
     val idle, compute, update, done = Value
@@ -304,9 +320,10 @@ class GEMMFMASingle(
 
     is(state.compute) {
       multiFMA.io.reset := false.B
+      multiFMA.io.blockResult.ready := true.B
       when(multiFMA.io.blockResult.valid) {
         for (i <- 0 until peCount) {
-          currentRowReg((colIndex.value * peCount.U + i.U) % n.U) := multiFMA.io.blockResult.bits(i)
+          curRowReg((colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0)) := multiFMA.io.blockResult.bits(i)
         }
         stateReg := state.update
       }
@@ -314,11 +331,11 @@ class GEMMFMASingle(
 
     is(state.update) {
       multiFMA.io.reset := true.B
-      io.currentRow.valid := false.B
+      multiFMA.io.blockResult.ready := false.B
       when(colIndex.inc()) {
-        io.currentRow.valid := true.B
-        io.currentRow.bits.index := rowIndex.value
-        io.currentRow.bits.value := currentRowReg
+        io.curRow.valid := true.B
+        io.curRow.bits.index := rowIndex.value
+        io.curRow.bits.value := curRowReg
         when(rowIndex.inc()) {
           stateReg := state.done
         }.otherwise {
@@ -330,6 +347,8 @@ class GEMMFMASingle(
 
     }
     is(state.done) {
+      multiFMA.io.reset := true.B
+      multiFMA.io.blockResult.ready := false.B
       io.done := true.B
       readyReg := true.B
       stateReg := state.idle
@@ -349,16 +368,16 @@ class GEMMSingleQueue(
     extends Module
     with DebugLog {
   val io = IO(new Bundle {
-    val matrixA = Flipped(Decoupled(Vec(m, Vec(k, UInt(config.inputWidth.W))))) // 矩阵A
-    val matrixB = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W))))) // 矩阵B
+    val matrixA = Flipped(Decoupled(Vec(m, Vec(k, UInt(config.inputWidth.W))))) 
+    val matrixB = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W))))) 
     val flush = Input(Bool())
-    val currentRow = Decoupled(new currentRowIndex(m, n))
+    val curRow = Decoupled(new curRowIndex(m, n))
     val done = Output(Bool())
   })
 
-  val currentBuffer = Module(
+  val curBuffer = Module(
     new Queue(
-      new currentRowIndex(m, n),
+      new curRowIndex(m, n),
       entries = bufferSize,
       pipe = true,
       flow = false,
@@ -369,9 +388,9 @@ class GEMMSingleQueue(
   val gemm = Module(new GEMMFMASingle(m, k, n, peCount, gemmType))
   gemm.io.matrixA <> io.matrixA
   gemm.io.matrixB <> io.matrixB
-  currentBuffer.io.flush.get := io.flush
-  currentBuffer.io.enq <> gemm.io.currentRow
-  io.currentRow <> currentBuffer.io.deq
+  curBuffer.io.flush.get := io.flush
+  curBuffer.io.enq <> gemm.io.curRow
+  io.curRow <> curBuffer.io.deq
   io.done := gemm.io.done
 
 }

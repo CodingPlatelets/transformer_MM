@@ -106,31 +106,31 @@ class OutValueTest extends AnyFlatSpec with ChiselScalatestTester with ParallelT
     }
 
     for (index <- 0 until m) {
-      if (dut.io.currentScores.ready.peekBoolean()) {
-        println(s"currentScores index: $index is ready")
-        dut.io.currentScores.valid.poke(true.B)
+      if (dut.io.curScores.ready.peekBoolean()) {
+        println(s"curScores index: $index is ready")
+        dut.io.curScores.valid.poke(true.B)
         
         for (i <- 0 until m) {
-          dut.io.currentScores.bits.value(i).poke(toBinaryBigInt(AttnWeights(index)(i)).U)
+          dut.io.curScores.bits.value(i).poke(toBinaryBigInt(AttnWeights(index)(i)).U)
         }
       } else {
-        dut.io.currentScores.valid.poke(false.B)
+        dut.io.curScores.valid.poke(false.B)
       }
       
-      dut.io.currentAttnOut.ready.poke(false.B)
-      while (!dut.io.currentAttnOut.valid.peekBoolean()) {
+      dut.io.curAttnOut.ready.poke(false.B)
+      while (!dut.io.curAttnOut.valid.peekBoolean()) {
         dut.clock.step()
       }
       
-      dut.io.currentAttnOut.ready.poke(true.B)
-      val currentRowIndex = dut.io.currentAttnOut.bits.index.peekInt()
+      dut.io.curAttnOut.ready.poke(true.B)
+      val curRowIndex = dut.io.curAttnOut.bits.index.peekInt()
       
       for (i <- 0 until n) {
-        val outBigInt = dut.io.currentAttnOut.bits.value(i).peekInt()
+        val outBigInt = dut.io.curAttnOut.bits.value(i).peekInt()
         val out = fromBinaryBigInt[T](outBigInt)
-        val expected = expectedResults(currentRowIndex.toInt)(i)
+        val expected = expectedResults(curRowIndex.toInt)(i)
         
-        checkResult(out, expected, currentRowIndex.toInt, i, precision) match {
+        checkResult(out, expected, curRowIndex.toInt, i, precision) match {
           case Some(_) => invalidcnt += 1
           case None    => // right
         }
