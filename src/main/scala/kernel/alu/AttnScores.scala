@@ -34,10 +34,13 @@ class QKGenWithReg(
 
   val dataValid = io.inputToken.valid && io.weightQ.valid && io.weightK.valid
 
-  val readyReg = RegInit(true.B)
-  io.inputToken.ready := readyReg
-  io.weightQ.ready := readyReg
-  io.weightK.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.inputToken.ready := readyReg
+  // io.weightQ.ready := readyReg
+  // io.weightK.ready := readyReg
+  io.inputToken.ready := true.B
+  io.weightQ.ready := true.B
+  io.weightK.ready := true.B
   io.Key.valid := false.B
   io.Key.bits := DontCare
   io.Query.valid := false.B
@@ -69,7 +72,10 @@ class QKGenWithReg(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.inputToken.ready := false.B
+        io.weightQ.ready := false.B
+        io.weightK.ready := false.B
         stateReg := state.gen
       }
     }
@@ -85,7 +91,10 @@ class QKGenWithReg(
     is(state.done) {
       qGen.io.results.ready := false.B
       kGen.io.results.ready := false.B
-      readyReg := true.B
+      io.inputToken.ready := true.B
+      io.weightQ.ready := true.B
+      io.weightK.ready := true.B
+      // readyReg := true.B
       io.Query.valid := true.B
       io.Key.valid := true.B
       io.Query.bits := Qreg
@@ -121,10 +130,13 @@ class QKGen(
 
   val dataValid = io.inputToken.valid && io.weightQ.valid && io.weightK.valid
 
-  val readyReg = RegInit(true.B)
-  io.inputToken.ready := readyReg
-  io.weightQ.ready := readyReg
-  io.weightK.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.inputToken.ready := readyReg
+  // io.weightQ.ready := readyReg
+  // io.weightK.ready := readyReg
+  io.inputToken.ready := true.B
+  io.weightQ.ready := true.B
+  io.weightK.ready := true.B
   io.Key.valid := false.B
   io.Key.bits := DontCare
   io.Query.valid := false.B
@@ -153,7 +165,10 @@ class QKGen(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.inputToken.ready := false.B
+        io.weightQ.ready := false.B
+        io.weightK.ready := false.B
         stateReg := state.gen
       }
     }
@@ -167,7 +182,10 @@ class QKGen(
     is(state.done) {
       qGen.io.results.ready := false.B
       kGen.io.results.ready := false.B
-      readyReg := true.B
+      // readyReg := true.B
+      io.inputToken.ready := true.B
+      io.weightQ.ready := true.B
+      io.weightK.ready := true.B
       io.Query.valid := true.B
       io.Key.valid := true.B
       io.Query.bits := qGen.io.results.bits
@@ -198,9 +216,11 @@ class QKMulWithReg(
 
   val dataValid = io.Query.valid && io.Key.valid
 
-  val readyReg = RegInit(true.B)
-  io.Query.ready := readyReg
-  io.Key.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.Query.ready := readyReg
+  // io.Key.ready := readyReg
+  io.Query.ready := true.B
+  io.Key.ready := true.B
   io.scores.valid := false.B
   io.scores.bits := DontCare
 
@@ -221,7 +241,8 @@ class QKMulWithReg(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.Query.ready := false.B
         stateReg := state.mul
       }
     }
@@ -234,7 +255,8 @@ class QKMulWithReg(
     }
     is(state.done) {
       QK_TMul.io.results.ready := false.B
-      readyReg := true.B
+      // readyReg := true.B
+      io.Query.ready := true.B
       io.scores.valid := true.B
       io.scores.bits := scoresReg
       stateReg := state.idle
@@ -263,9 +285,11 @@ class QKMul(
 
   val dataValid = io.Query.valid && io.Key.valid
 
-  val readyReg = RegInit(true.B)
-  io.Query.ready := readyReg
-  io.Key.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.Query.ready := readyReg
+  // io.Key.ready := readyReg
+  io.Query.ready := true.B
+  io.Key.ready := true.B
   io.scores.valid := false.B
   io.scores.bits := DontCare
 
@@ -285,7 +309,8 @@ class QKMul(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.Query.ready := false.B
         stateReg := state.mul
       }
     }
@@ -297,7 +322,8 @@ class QKMul(
     }
     is(state.done) {
       QK_TMul.io.results.ready := false.B
-      readyReg := true.B
+      // readyReg := true.B
+      io.Query.ready := true.B
       io.scores.valid := true.B
       io.scores.bits := QK_TMul.io.results.bits
       stateReg := state.idle
@@ -406,11 +432,14 @@ class AttnScores(
 
   val dataValid = io.inputToken.valid && io.weightQ.valid && io.weightK.valid
 
-  val readyReg = RegInit(true.B)
-  io.inputToken.ready := readyReg
-  io.weightQ.ready := readyReg
-  io.weightK.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.inputToken.ready := readyReg
+  // io.weightQ.ready := readyReg
+  // io.weightK.ready := readyReg
 
+  io.inputToken.ready := true.B
+  io.weightQ.ready := true.B
+  io.weightK.ready := true.B
   io.scores.valid := false.B
   io.scores.bits := DontCare
 
@@ -445,7 +474,9 @@ class AttnScores(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.inputToken.ready := false.B
+        io.weightQ.ready := false.B
         stateReg := state.gen
       }
     }
@@ -467,7 +498,9 @@ class AttnScores(
     }
     is(state.done) {
       QKMul.io.scores.ready := false.B
-      readyReg := true.B
+      // readyReg := true.B
+      io.inputToken.ready := true.B
+      io.weightQ.ready := true.B
       io.scores.valid := true.B
       // io.scores.bits := scoresReg
       io.scores.bits := QKMul.io.scores.bits
@@ -502,10 +535,13 @@ class AttnScoresSingle(
 
   val dataValid = io.inputToken.valid && io.weightQ.valid && io.weightK.valid
 
-  val readyReg = RegInit(true.B)
-  io.inputToken.ready := readyReg
-  io.weightQ.ready := readyReg
-  io.weightK.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.inputToken.ready := readyReg
+  // io.weightQ.ready := readyReg
+  // io.weightK.ready := readyReg
+  io.inputToken.ready := true.B
+  io.weightQ.ready := true.B
+  io.weightK.ready := true.B
   io.curRowScores.valid := false.B
   io.curRowScores.bits := DontCare
   io.done := false.B
@@ -540,7 +576,10 @@ class AttnScoresSingle(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.inputToken.ready := false.B
+        io.weightQ.ready := false.B
+        io.weightK.ready := false.B
         stateReg := state.gen
       }
     }
@@ -555,14 +594,8 @@ class AttnScoresSingle(
       QKGen.io.Query.ready := false.B
       QKGen.io.Key.ready := false.B
       QKMul.io.curRow.ready := true.B
-      // printf(p"QKGen.io.Query.bits: ${QKGen.io.Query.bits}\n")
-      // printf(p"QKGen.io.Key.bits: ${QKGen.io.Key.bits}\n")
-      // printf(p"QKMul.io.matrixA.bits: ${QKMul.io.matrixA.bits}\n")
-      // printf(p"QKMul.io.matrixB.bits: ${QKMul.io.matrixB.bits}\n")
       when(QKMul.io.curRow.valid) {
         curRowIndexReg := QKMul.io.curRow.bits
-        printf(p"QKMul.io.curRow.bits: ${QKMul.io.curRow.bits}\n")
-        printf(p"curRowIndexReg: ${curRowIndexReg}\n")
         stateReg := state.update
       }
     }
@@ -570,9 +603,6 @@ class AttnScoresSingle(
       QKMul.io.curRow.ready := false.B
       io.curRowScores.valid := true.B
       io.curRowScores.bits := curRowIndexReg
-      printf(p"Update curRowIndexReg: ${curRowIndexReg}\n")
-      printf(p"Update io.curRowScores.bits: ${io.curRowScores.bits}\n")
-      printf(p"Update io.curRowScores.valid: ${io.curRowScores.valid}\n")
       when(QKMul.io.done) {
         stateReg := state.done
       }.otherwise {
@@ -580,14 +610,17 @@ class AttnScoresSingle(
       }
     }
     is(state.done) {
-      readyReg := true.B
+      // readyReg := true.B
+      io.inputToken.ready := true.B
+      io.weightQ.ready := true.B
+      io.weightK.ready := true.B
       io.done := true.B
       stateReg := state.idle
     }
   }
 }
 
-// AttnScoresSingleQueue: use QKGen to get Q and K, get scores by row
+// AttnScoresSingleQueue: use Queue to store scores
 // input: inputToken: m * k
 // input: weightQ: k * n
 // input: weightK: k * n
@@ -614,42 +647,9 @@ class AttnScoresSingleQueue(
     val done = Output(Bool())
   })
 
-  val dataValid = io.inputToken.valid && io.weightQ.valid && io.weightK.valid
-
-  val readyReg = RegInit(true.B)
-  io.inputToken.ready := readyReg
-  io.weightQ.ready := readyReg
-  io.weightK.ready := readyReg
-  io.curRowScores.valid := false.B
-  io.curRowScores.bits := DontCare
-  io.done := false.B
-
-  // val QKGen = Module(new QKGenWithReg(m, k, n, peCount, gemmType))
-  val QKGen = Module(new QKGen(m, k, n, peCount, gemmType))
-
-  QKGen.io.inputToken.valid := io.inputToken.valid
-  QKGen.io.inputToken.bits := io.inputToken.bits
-  QKGen.io.weightQ.valid := io.weightQ.valid
-  QKGen.io.weightQ.bits := io.weightQ.bits
-  QKGen.io.weightK.valid := io.weightK.valid
-  QKGen.io.weightK.bits := io.weightK.bits
-
-  QKGen.io.Query.ready := false.B
-  QKGen.io.Key.ready := false.B
-
-  val curRowIndexReg = Reg(new curRowIndex(m, m))
-
-  val QKMul = Module(new GEMMFMASingle(m, n, m, peCount, gemmType))
-
-  QKMul.io.matrixA.valid := QKGen.io.Query.valid
-  QKMul.io.matrixA.bits := QKGen.io.Query.bits
-  QKMul.io.matrixB.valid := QKGen.io.Key.valid
-  QKMul.io.matrixB.bits := VecInit(QKGen.io.Key.bits.transpose.map(VecInit(_)))
-  QKMul.io.curRow.ready := false.B
-
   val curBuffer = Module(
     new Queue(
-      new curRowIndex(m, n),
+      new curRowIndex(m, m),
       entries = bufferSize,
       pipe = true,
       flow = false,
@@ -657,54 +657,18 @@ class AttnScoresSingleQueue(
       hasFlush = true
     )
   )
+  val doneReg = RegInit(false.B)
+
+  val attnScores = Module(new AttnScoresSingle(m, k, n, peCount, gemmType))
+  attnScores.io.inputToken <> io.inputToken
+  attnScores.io.weightQ <> io.weightQ
+  attnScores.io.weightK <> io.weightK
+
   curBuffer.io.flush.get := io.flush
-  curBuffer.io.enq <> QKMul.io.curRow
+  curBuffer.io.enq <> attnScores.io.curRowScores
+  doneReg := attnScores.io.done
+
   io.curRowScores <> curBuffer.io.deq
+  io.done := doneReg
 
-  object state extends ChiselEnum {
-    val idle, gen, mul, update, done = Value
-  }
-  val stateReg = RegInit(state.idle)
-
-  switch(stateReg) {
-    is(state.idle) {
-      when(dataValid) {
-        readyReg := false.B
-        stateReg := state.gen
-      }
-    }
-    is(state.gen) {
-      QKGen.io.Query.ready := true.B
-      QKGen.io.Key.ready := true.B
-      when(QKGen.io.Query.valid && QKGen.io.Key.valid) {
-        stateReg := state.mul
-      }
-    }
-    is(state.mul) {
-      QKGen.io.Query.ready := false.B
-      QKGen.io.Key.ready := false.B
-      QKMul.io.curRow.ready := true.B
-      // printf(p"QKGen.io.Query.bits: ${QKGen.io.Query.bits}\n")
-      // printf(p"QKGen.io.Key.bits: ${QKGen.io.Key.bits}\n")
-      when(QKMul.io.curRow.valid) {
-        // curRowIndexReg := QKMul.io.curRow.bits
-        stateReg := state.update
-      }
-    }
-    is(state.update) {
-      QKMul.io.curRow.ready := false.B
-      io.curRowScores.valid := true.B
-      // io.curRowScores.bits := curRowIndexReg
-      when(QKMul.io.done) {
-        stateReg := state.done
-      }.otherwise {
-        stateReg := state.mul
-      }
-    }
-    is(state.done) {
-      readyReg := true.B
-      io.done := true.B
-      stateReg := state.idle
-    }
-  }
 }

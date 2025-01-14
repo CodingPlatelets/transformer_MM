@@ -13,19 +13,6 @@ import Utils._
 
 class GEMMFMATest extends AnyFlatSpec with ChiselScalatestTester with ParallelTestExecution {
 
-  // private trait FMADut {
-  //   def k:        Int
-  //   def peCount:  Int
-  //   def gemmType: GEMMDataType.Type
-  //   def io: Bundle {
-  //     val reset:        Bool
-  //     val matrixA_row:  DecoupledIO[Vec[UInt]]
-  //     val matrixB_cols: DecoupledIO[Vec[Vec[UInt]]]
-  //     val blockResult:  DecoupledIO[Vec[UInt]]
-  //   }
-  //   def clock: Clock
-  // }
-
   private def testMultiFMA[T: Numeric: ClassTag](
     dut: MultiFMA
   )(
@@ -153,58 +140,69 @@ class GEMMFMATest extends AnyFlatSpec with ChiselScalatestTester with ParallelTe
     val m = dut.m
     val k = dut.k
     val n = dut.n
-    val peCount = dut.peCount
     val gemmType = dut.gemmType
 
-    val matrixA = matInit[T](m, k)
-    val matrixB = matInit[T](k, n)
-    val expectedResults = mmul(matrixA, matrixB)
+    val caseNum = 10
 
-    printmat(matrixA)
-    printmat(matrixB)
-    printmat(expectedResults)
+    val testCases = Array.tabulate(caseNum) { i =>
+      val matrixA = matInit[T](m, k)
+      val matrixB = matInit[T](k, n)
+      val exResult = mmul(matrixA, matrixB)
+      (matrixA, matrixB, exResult)
+    }
 
-    if (dut.io.matrixA.ready.peekBoolean() && dut.io.matrixB.ready.peekBoolean()) {
-      println("matrixA and matrixB are ready")
-      dut.io.matrixA.valid.poke(true.B)
-      dut.io.matrixB.valid.poke(true.B)
-
-      for {
-        row <- 0 until m
-        col <- 0 until n
-        i <- 0 until k
-      } {
-        dut.io.matrixA.bits(row)(i).poke(toBinaryBigInt(matrixA(row)(i)).U)
-        dut.io.matrixB.bits(i)(col).poke(toBinaryBigInt(matrixB(i)(col)).U)
+    fork {
+      var cnt = 0
+      while (cnt < caseNum) {
+        val (matrixA, matrixB, _) = testCases(cnt)
+        if (dut.io.matrixA.ready.peekBoolean() && dut.io.matrixB.ready.peekBoolean()) {
+          println(s"case $cnt : matrixA and matrixB are ready")
+          dut.io.matrixA.valid.poke(true.B)
+          dut.io.matrixB.valid.poke(true.B)
+          for {
+            row <- 0 until m
+            col <- 0 until n
+            i <- 0 until k
+          } {
+            dut.io.matrixA.bits(row)(i).poke(toBinaryBigInt(matrixA(row)(i)).U)
+            dut.io.matrixB.bits(i)(col).poke(toBinaryBigInt(matrixB(i)(col)).U)
+          }
+          cnt += 1
+        } else {
+          dut.io.matrixA.valid.poke(false.B)
+          dut.io.matrixB.valid.poke(false.B)
+        }
+        dut.clock.step()
       }
-    } else {
-      dut.io.matrixA.valid.poke(false.B)
-      dut.io.matrixB.valid.poke(false.B)
-    }
-
-    while (!dut.io.results.valid.peekBoolean()) {
-      dut.clock.step()
-    }
-
-    dut.io.results.ready.poke(true.B)
-    val precision = 0.001f
-    var invalidcnt = 0
-
-    for {
-      row <- 0 until m
-      col <- 0 until n
-    } {
-      val outBigInt = dut.io.results.bits(row)(col).peekInt()
-      val out = fromBinaryBigInt[T](outBigInt)
-      val expected = expectedResults(row)(col)
-      checkResult(out, expected, row, col, precision) match {
-        case Some(_) => invalidcnt += 1
-        case None    => // right
+    }.fork {
+      var resCnt = 0
+      while (resCnt < caseNum) {
+        val (_, _, exResult) = testCases(resCnt)
+        if (dut.io.results.valid.peekBoolean()) {
+          dut.io.results.ready.poke(true.B)
+          val precision = 0.001f
+          var invalidcnt = 0
+          for {
+            row <- 0 until m
+            col <- 0 until n
+          } {
+            val outBigInt = dut.io.results.bits(row)(col).peekInt()
+            val out = fromBinaryBigInt[T](outBigInt)
+            val expected = exResult(row)(col)
+            checkResult(out, expected, row, col, precision) match {
+              case Some(_) => invalidcnt += 1
+              case None    => // right
+            }
+          }
+          if (invalidcnt == 0) println(s"case $resCnt Verification passed!")
+          else println(s"case $resCnt Verification failed with $invalidcnt errors.")
+          resCnt += 1
+        } else {
+          dut.io.results.ready.poke(false.B)
+        }
+        dut.clock.step()
       }
-    }
-
-    if (invalidcnt == 0) println("Verification passed!")
-    else println(s"Verification failed with $invalidcnt errors.")
+    }.join()
   }
 
   private def testGEMMFMASingle[T: Numeric: ClassTag](
@@ -218,56 +216,72 @@ class GEMMFMATest extends AnyFlatSpec with ChiselScalatestTester with ParallelTe
     val peCount = dut.peCount
     val gemmType = dut.gemmType
 
-    val matrixA = matInit[T](m, k)
-    val matrixB = matInit[T](k, n)
-    val expectedResults = mmul(matrixA, matrixB)
+    val caseNum = 10
 
-    printmat(matrixA)
-    printmat(matrixB)
-    printmat(expectedResults)
-
-    if (dut.io.matrixA.ready.peekBoolean() && dut.io.matrixB.ready.peekBoolean()) {
-      println("matrixA and matrixB are ready")
-      dut.io.matrixA.valid.poke(true.B)
-      dut.io.matrixB.valid.poke(true.B)
-
-      for {
-        row <- 0 until m
-        col <- 0 until n
-        i <- 0 until k
-      } {
-        dut.io.matrixA.bits(row)(i).poke(toBinaryBigInt(matrixA(row)(i)).U)
-        dut.io.matrixB.bits(i)(col).poke(toBinaryBigInt(matrixB(i)(col)).U)
-      }
-    } else {
-      dut.io.matrixA.valid.poke(false.B)
-      dut.io.matrixB.valid.poke(false.B)
+    val testCases = Array.tabulate(caseNum) { i =>
+      val matrixA = matInit[T](m, k)
+      val matrixB = matInit[T](k, n)
+      val exResult = mmul(matrixA, matrixB)
+      (matrixA, matrixB, exResult)
     }
 
-    val precision = 0.001f
-    var invalidcnt = 0
-
-    while (!dut.io.done.peekBoolean()) {
-      if (dut.io.curRow.valid.peekBoolean()) {
-        val curRowIndex = dut.io.curRow.bits.index.peekInt()
-        println(s"curRow index: $curRowIndex")
-
-        for (i <- 0 until n) {
-          val outBigInt = dut.io.curRow.bits.value(i).peekInt()
-          val out = fromBinaryBigInt[T](outBigInt)
-          val expected = expectedResults(curRowIndex.toInt)(i)
-
-          checkResult(out, expected, curRowIndex.toInt, i, precision) match {
-            case Some(_) => invalidcnt += 1
-            case None    => // right
+    fork {
+      var cnt = 0
+      while (cnt < caseNum) {
+        val (matrixA, matrixB, _) = testCases(cnt)
+        if (dut.io.matrixA.ready.peekBoolean() && dut.io.matrixB.ready.peekBoolean()) {
+          println(s"case $cnt : matrixA and matrixB are ready")
+          dut.io.matrixA.valid.poke(true.B)
+          dut.io.matrixB.valid.poke(true.B)
+          for {
+            row <- 0 until m
+            col <- 0 until n
+            i <- 0 until k
+          } {
+            dut.io.matrixA.bits(row)(i).poke(toBinaryBigInt(matrixA(row)(i)).U)
+            dut.io.matrixB.bits(i)(col).poke(toBinaryBigInt(matrixB(i)(col)).U)
           }
+          cnt += 1
+        } else {
+          dut.io.matrixA.valid.poke(false.B)
+          dut.io.matrixB.valid.poke(false.B)
         }
+        dut.clock.step()
       }
-      dut.clock.step()
-    }
-
-    if (invalidcnt == 0) println("Verification passed!")
-    else println(s"Verification failed with $invalidcnt errors.")
+    }.fork {
+      var resCnt = 0
+      while (resCnt < caseNum) {
+        val (_, _, exResult) = testCases(resCnt)
+        var rowIdx = 0
+        while (rowIdx < m) {
+          val precision = 0.001f
+          var invalidcnt = 0
+          if (dut.io.curRow.valid.peekBoolean()) {
+            dut.io.curRow.ready.poke(true.B)
+            val curRowIndex = dut.io.curRow.bits.index.peekInt()
+            dut.io.curRow.bits.index.expect(rowIdx.U)
+            println(s"curRow index: $curRowIndex")
+            for (i <- 0 until n) {
+              val outBigInt = dut.io.curRow.bits.value(i).peekInt()
+              val out = fromBinaryBigInt[T](outBigInt)
+              val expected = exResult(curRowIndex.toInt)(i)
+              checkResult(out, expected, rowIdx, i, precision) match {
+                case Some(_) => invalidcnt += 1
+                case None    => // right
+              }
+            }
+            if (invalidcnt == 0) println(s"case $resCnt : row $rowIdx Verification passed!")
+            else println(s"case $resCnt : row $rowIdx Verification failed with $invalidcnt errors.")
+            rowIdx += 1
+          } else {
+            dut.io.curRow.ready.poke(false.B)
+          }
+          dut.clock.step()
+        }
+        dut.io.done.expect(true.B)
+        resCnt += 1
+      }
+    }.join()
   }
 
   private def testGEMMSingleQueue[T: Numeric: ClassTag](
@@ -280,70 +294,83 @@ class GEMMFMATest extends AnyFlatSpec with ChiselScalatestTester with ParallelTe
     val n = dut.n
     val gemmType = dut.gemmType
 
-    val matrixA = matInit[T](m, k)
-    val matrixB = matInit[T](k, n)
-    val expectedResults = mmul(matrixA, matrixB)
+    val caseNum = 10
 
-    printmat(matrixA)
-    printmat(matrixB)
-    printmat(expectedResults)
-
-    dut.io.flush.poke(true.B)
-    dut.clock.step(1)
-    dut.io.flush.poke(false.B)
-
-    if (dut.io.matrixA.ready.peekBoolean() && dut.io.matrixB.ready.peekBoolean()) {
-      println("matrixA and matrixB are ready")
-      dut.io.matrixA.valid.poke(true.B)
-      dut.io.matrixB.valid.poke(true.B)
-
-      for {
-        row <- 0 until m
-        col <- 0 until n
-        i <- 0 until k
-      } {
-        dut.io.matrixA.bits(row)(i).poke(toBinaryBigInt(matrixA(row)(i)).U)
-        dut.io.matrixB.bits(i)(col).poke(toBinaryBigInt(matrixB(i)(col)).U)
-      }
-    } else {
-      dut.io.matrixA.valid.poke(false.B)
-      dut.io.matrixB.valid.poke(false.B)
+    val testCases = Array.tabulate(caseNum) { i =>
+      val matrixA = matInit[T](m, k)
+      val matrixB = matInit[T](k, n)
+      val exResult = mmul(matrixA, matrixB)
+      (matrixA, matrixB, exResult)
     }
-
-    dut.io.curRow.ready.poke(true.B)
-    val precision = 0.001f
-    var invalidcnt = 0
-
-    while (!dut.io.done.peekBoolean()) {
-      if (dut.io.curRow.valid.peekBoolean()) {
-        val curRowIndex = dut.io.curRow.bits.index.peekInt()
-        println(s"curRow index: $curRowIndex")
-
-        for (i <- 0 until n) {
-          val outBigInt = dut.io.curRow.bits.value(i).peekInt()
-          val out = fromBinaryBigInt[T](outBigInt)
-          val expected = expectedResults(curRowIndex.toInt)(i)
-
-          checkResult(out, expected, curRowIndex.toInt, i, precision) match {
-            case Some(_) => invalidcnt += 1
-            case None    => // right
+    fork {
+      var cnt = 0
+      while (cnt < caseNum) {
+        dut.io.flush.poke(true.B)
+        dut.clock.step()
+        dut.io.flush.poke(false.B)
+        val (matrixA, matrixB, _) = testCases(cnt)
+        if (dut.io.matrixA.ready.peekBoolean() && dut.io.matrixB.ready.peekBoolean()) {
+          println(s"case $cnt : matrixA and matrixB are ready")
+          dut.io.matrixA.valid.poke(true.B)
+          dut.io.matrixB.valid.poke(true.B)
+          for {
+            row <- 0 until m
+            col <- 0 until n
+            i <- 0 until k
+          } {
+            dut.io.matrixA.bits(row)(i).poke(toBinaryBigInt(matrixA(row)(i)).U)
+            dut.io.matrixB.bits(i)(col).poke(toBinaryBigInt(matrixB(i)(col)).U)
           }
+          cnt += 1
+        } else {
+          dut.io.matrixA.valid.poke(false.B)
+          dut.io.matrixB.valid.poke(false.B)
         }
+        dut.clock.step()
       }
-      dut.clock.step()
-    }
-
-    if (invalidcnt == 0) println("Verification passed!")
-    else println(s"Verification failed with $invalidcnt errors.")
+    }.fork {
+      var resCnt = 0
+      while (resCnt < caseNum) {
+        val (_, _, exResult) = testCases(resCnt)
+        var rowIdx = 0
+        while (rowIdx < m) {
+          val precision = 0.001f
+          var invalidcnt = 0
+          if (dut.io.curRow.valid.peekBoolean()) {
+            dut.io.curRow.ready.poke(true.B)
+            val curRowIndex = dut.io.curRow.bits.index.peekInt()
+            dut.io.curRow.bits.index.expect(rowIdx.U)
+            println(s"curRow index: $curRowIndex")
+            for (i <- 0 until n) {
+              val outBigInt = dut.io.curRow.bits.value(i).peekInt()
+              val out = fromBinaryBigInt[T](outBigInt)
+              val expected = exResult(curRowIndex.toInt)(i)
+              checkResult(out, expected, rowIdx, i, precision) match {
+                case Some(_) => invalidcnt += 1
+                case None    => // right
+              }
+            }
+            if (invalidcnt == 0) println(s"case $resCnt : row $rowIdx Verification passed!")
+            else println(s"case $resCnt : row $rowIdx Verification failed with $invalidcnt errors.")
+            rowIdx += 1
+          } else {
+            dut.io.curRow.ready.poke(false.B)
+          }
+          dut.clock.step()
+        }
+        dut.io.done.expect(true.B)
+        resCnt += 1
+      }
+    }.join()
   }
 
-  // "GEMMSingleQueue " should "compute fxp matrix multiplication" in {
-  //   implicit val config: DataWidthConfig = FxpConfig
-  //   test(new GEMMSingleQueue(m = 8, k = 8, n = 12, peCount = 4, gemmType = GEMMDataType.Fxp))
-  //     .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
-  //       testGEMMSingleQueue[Int](dut)
-  //     }
-  // }
+  "GEMMSingleQueue " should "compute fxp matrix multiplication" in {
+    implicit val config: DataWidthConfig = FxpConfig
+    test(new GEMMSingleQueue(m = 8, k = 8, n = 12, peCount = 4, gemmType = GEMMDataType.Fxp))
+      .withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+        testGEMMSingleQueue[Int](dut)
+      }
+  }
 
   // "GEMMSingleQueue " should "compute fp32 matrix multiplication" in {
   //   implicit val config: DataWidthConfig = Fp32Config

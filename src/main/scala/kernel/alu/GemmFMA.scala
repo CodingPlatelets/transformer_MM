@@ -180,9 +180,17 @@ class GEMMFMATotal(
 
   val dataValid = io.matrixA.valid && io.matrixB.valid
 
-  val readyReg = RegInit(true.B)
-  io.matrixA.ready := readyReg
-  io.matrixB.ready := readyReg
+  //TODO:ERR use readyReg and resValid case deadlock
+  // cases "Exception in thread "chiseltest_thread_2" java.lang.RuntimeException: Deadlock!" Error
+  // when test fork() and join() in chiseltest
+
+  // val readyReg = RegInit(true.B)
+  // val resValid = RegInit(false.B)
+  // io.matrixA.ready := readyReg
+  // io.matrixB.ready := readyReg
+  // io.results.valid := resValid
+  io.matrixA.ready := true.B
+  io.matrixB.ready := true.B
   io.results.valid := false.B
   io.results.bits := DontCare
 
@@ -214,7 +222,9 @@ class GEMMFMATotal(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.matrixA.ready := false.B
+        io.matrixB.ready := false.B
         stateReg := state.compute
       }
     }
@@ -243,10 +253,12 @@ class GEMMFMATotal(
       }.otherwise {
         stateReg := state.compute
       }
-
     }
     is(state.done) {
-      readyReg := true.B
+      // resValid := true.B
+      // readyReg := true.B
+      io.matrixA.ready := true.B
+      io.matrixB.ready := true.B
       io.results.valid := true.B
       io.results.bits := resultsReg
       stateReg := state.idle
@@ -278,9 +290,11 @@ class GEMMFMASingle(
   })
 
   val dataValid = io.matrixA.valid && io.matrixB.valid
-  val readyReg = RegInit(true.B)
-  io.matrixA.ready := readyReg
-  io.matrixB.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.matrixA.ready := readyReg
+  // io.matrixB.ready := readyReg
+  io.matrixA.ready := true.B
+  io.matrixB.ready := true.B
   io.curRow.valid := false.B
   io.curRow.bits := DontCare
   io.done := false.B
@@ -313,7 +327,9 @@ class GEMMFMASingle(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.matrixA.ready := false.B
+        io.matrixB.ready := false.B
         stateReg := state.compute
       }
     }
@@ -349,8 +365,10 @@ class GEMMFMASingle(
     is(state.done) {
       multiFMA.io.reset := true.B
       multiFMA.io.blockResult.ready := false.B
+      io.matrixA.ready := true.B
+      io.matrixB.ready := true.B
       io.done := true.B
-      readyReg := true.B
+      // readyReg := true.B
       stateReg := state.idle
     }
   }
@@ -368,8 +386,8 @@ class GEMMSingleQueue(
     extends Module
     with DebugLog {
   val io = IO(new Bundle {
-    val matrixA = Flipped(Decoupled(Vec(m, Vec(k, UInt(config.inputWidth.W))))) 
-    val matrixB = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W))))) 
+    val matrixA = Flipped(Decoupled(Vec(m, Vec(k, UInt(config.inputWidth.W)))))
+    val matrixB = Flipped(Decoupled(Vec(k, Vec(n, UInt(config.inputWidth.W)))))
     val flush = Input(Bool())
     val curRow = Decoupled(new curRowIndex(m, n))
     val done = Output(Bool())
@@ -385,12 +403,14 @@ class GEMMSingleQueue(
       hasFlush = true
     )
   )
+  val doneReg = RegInit(false.B)
   val gemm = Module(new GEMMFMASingle(m, k, n, peCount, gemmType))
   gemm.io.matrixA <> io.matrixA
   gemm.io.matrixB <> io.matrixB
   curBuffer.io.flush.get := io.flush
   curBuffer.io.enq <> gemm.io.curRow
+  doneReg := gemm.io.done
   io.curRow <> curBuffer.io.deq
-  io.done := gemm.io.done
+  io.done := doneReg
 
 }

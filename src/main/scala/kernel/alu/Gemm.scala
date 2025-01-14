@@ -8,7 +8,7 @@ import fputil.FPAdd
 import hardfloat._
 
 trait GEMMAccuracyConfig {
-  val I: Int = 8
+  val I: Int = 10
   val F: Int = 0
 }
 

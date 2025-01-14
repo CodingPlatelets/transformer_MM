@@ -28,9 +28,11 @@ class OutValue(
 
   val dataValid = io.Scores.valid && io.Value.valid
 
-  val readyReg = RegInit(true.B)
-  io.Scores.ready := readyReg
-  io.Value.ready := readyReg
+  // val readyReg = RegInit(true.B)
+  // io.Scores.ready := readyReg
+  // io.Value.ready := readyReg
+  io.Scores.ready := true.B
+  io.Value.ready := true.B
   io.AttnOut.valid := false.B
   io.AttnOut.bits := DontCare
 
@@ -50,7 +52,9 @@ class OutValue(
   switch(stateReg) {
     is(state.idle) {
       when(dataValid) {
-        readyReg := false.B
+        // readyReg := false.B
+        io.Scores.ready := false.B
+        io.Value.ready := false.B
         stateReg := state.compute
       }
     }
@@ -62,7 +66,9 @@ class OutValue(
     }
     is(state.done) {
       ValueMul.io.results.ready := false.B
-      readyReg := true.B
+      // readyReg := true.B
+      io.Scores.ready := true.B
+      io.Value.ready := true.B
       io.AttnOut.valid := true.B
       io.AttnOut.bits := ValueMul.io.results.bits
       stateReg := state.idle
@@ -113,7 +119,7 @@ class OutValueSingle(
   multiFMA.io.matrixB_cols.valid := io.Value.valid
   multiFMA.io.matrixB_cols.bits := VecInit(Seq.tabulate(m) { j =>
     VecInit(Seq.tabulate(peCount) { i =>
-      ValueReg(j)(((colIndex.value << log2Ceil(peCount).U) + i.U)(log2Ceil(n)-1, 0))
+      ValueReg(j)((colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0))
     })
   }) //m * peCount size block of Value
 
@@ -132,6 +138,7 @@ class OutValueSingle(
     is(state.idle) {
       when(dataValid) {
         io.Value.ready := false.B
+        io.curScores.ready := false.B
         stateReg := state.compute
       }
     }
@@ -141,7 +148,7 @@ class OutValueSingle(
       multiFMA.io.blockResult.ready := true.B
       when(multiFMA.io.blockResult.valid) {
         for (i <- 0 until peCount) {
-          curRowReg(colIndex.value * peCount.U + i.U) := multiFMA.io.blockResult.bits(i)
+          curRowReg(colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0) := multiFMA.io.blockResult.bits(i)
         }
         stateReg := state.update
       }
