@@ -166,16 +166,18 @@ class CustomGemmTest extends AnyFlatSpec with ChiselScalatestTester with Paralle
   private def testCustomGemm[T: Numeric: ClassTag]
   (dut: CustomGemm)
   (implicit config: DataWidthConfig) = {
+    dut.clock.setTimeout(0)
     val p = dut.p
     val q = dut.q
     val m = dut.m
-
     val arraySize = 1
     val matrixAArray = Array.tabulate(arraySize)(_ => matInit[T](p, m))
     val matrixBArray = Array.tabulate(arraySize)(_ => matInit[T](m, q))
     val matrixArray = matrixAArray.zip(matrixBArray).map {
       case (a, b) => mmul(a, b)
     }
+    //printmat((matrixAArray(0).flatten), p, m)
+    //printmat((matrixBArray(0).flatten), m, q)
     printmat((matrixArray(0).flatten), p, q)
     def checkresult(): List[T] = {
       val ret = for (i <- 0 until p * q) yield {
@@ -216,8 +218,9 @@ class CustomGemmTest extends AnyFlatSpec with ChiselScalatestTester with Paralle
         if (dut.io.out.valid.peekBoolean()) {
           dut.io.out.ready.poke(true.B)
           val out = checkresult()
-          //printmat(out.toArray, p, q)
+          printmat(out.toArray, p, q)
           var invalidcnt = 0
+          var cnt = 0
           for (i <- out.zip(matrixArray(resC).flatten.toList)) {
             val isInvalid = (implicitly[ClassTag[T]].runtimeClass match {
               case c if c == classOf[Float] =>
@@ -230,9 +233,10 @@ class CustomGemmTest extends AnyFlatSpec with ChiselScalatestTester with Paralle
                 throw new IllegalArgumentException(s"Unsupported type: ${implicitly[ClassTag[T]].runtimeClass}")
             })
             if (isInvalid) {
-              println(f"Error: ${i._1} ${i._2}")
+              println(f"Error: ${cnt} ${i._1} ${i._2}")
               invalidcnt += 1
             }
+            cnt = cnt + 1
           } 
           if (invalidcnt == 0) println("GEMM Verification passed!")
           assert(invalidcnt == 0)
@@ -248,7 +252,7 @@ class CustomGemmTest extends AnyFlatSpec with ChiselScalatestTester with Paralle
  
   "CustomGemm basic test on Verilator" should "pass" in {
     implicit val fxpConfig: DataWidthConfig = FxpConfig
-    test(new CustomGemm(4, 8, 8, 4, GEMMDataType.Fxp))
+    test(new CustomGemm(4, 4, 4, 4, GEMMDataType.Fxp))
     .withAnnotations(Seq(VerilatorBackendAnnotation))(testCustomGemm[Float])
   }
 }

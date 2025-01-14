@@ -115,7 +115,6 @@ class SystolicMM(val n: Int = 4, val gemmType: GEMMDataType.Type)(implicit confi
       case _                 => throw new IllegalArgumentException("Unsupported GEMM type")
     }
   })
-
   peElements.foreach(_.reset := io.reset)
 
   val h_wires = Wire(Vec((n - 1) * n, UInt(config.inputWidth.W)))

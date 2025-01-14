@@ -26,10 +26,9 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
   val dataValid = io.in_a.valid && io.in_b.valid
 
   val busy = RegInit(false.B)
-
+  //debugLog(p"${config.inputWidth}\n", LogLevel.DEBUG)
   io.in_a.ready := !busy
   io.in_b.ready := !busy
-
   val sysmm = Module(new SystolicMM(n, gemmType))
   sysmm.io.reset := false.B
   for (i <- 0 until n) {
@@ -61,8 +60,8 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
   val rowIndex = Counter(rowCnt + 1)
   val colIndex = Counter(colCnt + 1)
   when(rowIndex.value < rowCnt.U){
+    val cnt = Counter(m + 2 * n)
     when(colIndex.value < colCnt.U){
-      val cnt = Counter(m + 2 * n)
       when(busy && cnt.value < (n + m).U) {
         for (i <- 0 until n) {
           val temp = cnt.value >= i.U
@@ -70,8 +69,10 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
           val row = rowIndex.value * n.U + i.U
           val col = colIndex.value * n.U + i.U
           when(temp && p < m.U) {
-            sysmm.io.in_a(i) := matrixAReg(row(log2Ceil(rowCnt), 0))(p(log2Ceil(m) - 1, 0))
-            sysmm.io.in_b(i) := matrixBReg(p(log2Ceil(m) - 1, 0))(col(log2Ceil(colCnt), 0))
+            //debugLog(p"A row: ${row} col: ${p} value: ${matrixAReg(row)(p)} \n", LogLevel.DEBUG)
+            //debugLog(p"B row: ${p} col: ${col} value: ${matrixBReg(p)(col)} \n", LogLevel.DEBUG)
+            sysmm.io.in_a(i) := matrixAReg(row)(p)
+            sysmm.io.in_b(i) := matrixBReg(p)(col)
           }
         }
         debugLog(p"\n")
@@ -85,7 +86,7 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
         for (i <- 0 until n) {
           for (j <- 0 until n) {
             val row = rowIndex.value * n.U + i.U
-            val col = colIndex.value * n.U + j.U
+            val col = colIndex.value * n.U + j.U  
             //debugLog(p"row: ${row} col: ${col} value: ${sysmm.io.out(i * n + j)} \n", LogLevel.DEBUG)
             ResultReg(row)(col) := sysmm.io.out(i * n + j)
           }
@@ -94,6 +95,7 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
       }
     }
     when(colIndex.value === colCnt.U) {
+      cnt.reset()
       colIndex.inc()
       rowIndex.inc()
     }
