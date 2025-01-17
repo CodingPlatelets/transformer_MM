@@ -6,6 +6,7 @@ import kernel.utils.DebugLog
 import fixedpoint._
 import kernel.utils.PipeValue
 import kernel.utils.common
+import scala.math.pow
 
 trait SoftmaxAccuracy {
   val I: Int = 8
@@ -115,7 +116,6 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
     val x = Flipped(Decoupled(Vec(arraySize, UInt(width.W))))
     val soft_x = Decoupled(Vec(arraySize, UInt(width.W)))
   })
-  //状态机定义
   object state extends ChiselEnum {
     val idle, compute, update, done,delay = Value
   }
@@ -126,13 +126,13 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
 
     //queue  x->x_use
   val queue = Module(new Queue(Vec(arraySize, UInt(width.W)),queueDepth))
-  val x_use_reg=Reg(Vec(arraySize, Valid(UInt(width.W))))
+  val xReg=Reg(Vec(arraySize, Valid(UInt(width.W))))
   queue.io.enq.bits:=io.x.bits
   queue.io.enq.valid:=io.x.valid
   when(queue.io.deq.valid && queue.io.deq.ready) {
   for (i <- 0 until arraySize) {
-    x_use_reg(i).bits := queue.io.deq.bits(i) 
-    x_use_reg(i).valid := queue.io.deq.valid 
+    xReg(i).bits := queue.io.deq.bits(i) 
+    xReg(i).valid := queue.io.deq.valid 
   }
   }
     
@@ -142,92 +142,92 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
   //printf("io.x.valid: %d,io.x.bits: %d\n",io.x.valid,io.x.bits(0))  
   //printf("queue.io.enq.valid: %d,queue.io.enq.bits: %d\n",queue.io.enq.valid,queue.io.enq.bits(0))
   //printf("queue.io.deq.valid: %d,queue.io.deq.bits: %d\n",queue.io.deq.valid,queue.io.deq.bits(0))
-  //printf("x_use_reg.valid: %d,x_use_reg.bits: %d\n",x_use_reg.valid,x_use_reg.bits(0))
+  //printf("xReg.valid: %d,xReg.bits: %d\n",xReg.valid,xReg.bits(0))
   //when(queue.io.deq.valid){
     //printf("queue.io.deq.bits: %d %d\n",queue.io.deq.bits(0),queue.io.deq.bits(1))
   //}
-  val Float2FxpModule=Module(new MultiPEFloat2Fxp(numPE))
-  val Float2FxpModule_state=RegInit(state.idle)
-  val expModule_state=RegInit(state.idle)
-    val divModule_state=RegInit(state.idle)
-  queue.io.deq.ready:=(Float2FxpModule_state===state.idle)&&(~x_use_reg.map(_.valid).reduce(_ || _))
-  val Float2FxpModule_row=Counter(arraySize/numPE)
-  val x_fp_reg=Reg((Vec(arraySize,  Valid(UInt((I + F).W)))))
-  val Float2FxpModule_reset = RegInit(false.B) // 复位标志
-  val Float2FxpModule_done = RegInit(false.B) // 完成标志
+  val float2FxpModule=Module(new MultiPEFloat2Fxp(numPE))
+  val float2FxpModuleState=RegInit(state.idle)
+  val expModuleState=RegInit(state.idle)
+  val divModuleState=RegInit(state.idle)
+  queue.io.deq.ready:=(float2FxpModuleState===state.idle)&&(~xReg.map(_.valid).reduce(_ || _))
+  val float2FxpModuleRow=Counter(arraySize/numPE)
+  val xFp=Reg((Vec(arraySize,  Valid(UInt((I + F).W)))))
+  val float2FxpModuleReset = RegInit(false.B) // 复位标志
+  val float2FxpModuleDone = RegInit(false.B) // 完成标志
   //输入连接
   for(i<-0 until numPE){
-    Float2FxpModule.io.x.bits(i):=x_use_reg(Float2FxpModule_row.value*numPE.U+i.U).bits
+    float2FxpModule.io.x.bits(i):=xReg(float2FxpModuleRow.value*numPE.U+i.U).bits
   }
 
-  Float2FxpModule.io.x.valid:=(0 until numPE).map(i => x_use_reg(Float2FxpModule_row.value*numPE.U+i.U).valid).reduce(_ && _)
+  float2FxpModule.io.x.valid:=(0 until numPE).map(i => xReg(float2FxpModuleRow.value*numPE.U+i.U).valid).reduce(_ && _)
   //状态转移
-  switch(Float2FxpModule_state) {
+  switch(float2FxpModuleState) {
     is(state.idle) {
-      when(x_use_reg.map(_.valid).reduce(_ && _)) {
+      when(xReg.map(_.valid).reduce(_ && _)) {
         for(i<-0 until numPE){
-          x_use_reg(Float2FxpModule_row.value*numPE.U+i.U).valid:=false.B
+          xReg(float2FxpModuleRow.value*numPE.U+i.U).valid:=false.B
         }
         //printf("false 1\n")
 
-        Float2FxpModule_state:=state.compute
-        //printf("row: %d,x_use_reg.bits: %d %d\n",Float2FxpModule_row.value,x_use_reg.bits(0),x_use_reg.bits(1))
+        float2FxpModuleState:=state.compute
+        //printf("row: %d,xReg.bits: %d %d\n",float2FxpModuleRow.value,xReg.bits(0),xReg.bits(1))
         //printf("compute\n")
       }
     }
     is(state.compute) {
-      when(Float2FxpModule.io.valid) {
+      when(float2FxpModule.io.valid) {
         for (i <- 0 until numPE) {
-          x_fp_reg(Float2FxpModule_row.value*numPE.U+i.U).bits:=Float2FxpModule.io.fp_x(i)
+          xFp(float2FxpModuleRow.value*numPE.U+i.U).bits:=float2FxpModule.io.fp_x(i)
         }
         //printf("row: %d,x_fp_reg.bits: %d %d\n",Float2FxpModule_row.value,x_fp_reg.bits(0),x_fp_reg.bits(1))
-        Float2FxpModule_reset:= true.B
-        Float2FxpModule_state:=state.update
+        float2FxpModuleReset:= true.B
+        float2FxpModuleState:=state.update
         //printf("update\n")
       }
     }
 
     is(state.update) {
       
-      when(Float2FxpModule_row.inc()) {
-        Float2FxpModule_state:=state.done 
+      when(float2FxpModuleRow.inc()) {
+        float2FxpModuleState:=state.done 
        // printf("done\n")
       }.otherwise {
         
-        Float2FxpModule_state:=state.delay
+        float2FxpModuleState:=state.delay
        //printf("compute\n")
       }
 
     }
     is(state.delay) {
       //printf("Float2FxpModule_row: %d\n",Float2FxpModule_row.value.asUInt)
-      when((0 until numPE).map(i => x_use_reg(Float2FxpModule_row.value*numPE.U+i.U).valid).reduce(_ && _)) {
+      when((0 until numPE).map(i => xReg(float2FxpModuleRow.value*numPE.U+i.U).valid).reduce(_ && _)) {
           for(i<-0 until numPE){
-            x_use_reg(Float2FxpModule_row.value*numPE.U+i.U).valid:=false.B
+            xReg(float2FxpModuleRow.value*numPE.U+i.U).valid:=false.B
           }
           //printf("false 2\n")
         }
-        Float2FxpModule_state:=state.compute
+        float2FxpModuleState:=state.compute
     }
     is(state.done) {
-      Float2FxpModule_done:= true.B
-      when(expModule_state===state.idle){
+      float2FxpModuleDone:= true.B
+      when(expModuleState===state.idle){
         for(i<-0 until arraySize){
-          x_fp_reg(i).valid:=true.B
+          xFp(i).valid:=true.B
         }
-      //printf("x_use_reg.valid: %d %d\n",x_use_reg(0).valid,x_use_reg(4).valid)
-      Float2FxpModule_state:=state.idle
+      //printf("xReg.valid: %d %d\n",xReg(0).valid,xReg(4).valid)
+      float2FxpModuleState:=state.idle
       //printf("idle x_fp_reg.bits: %d %d\n",x_fp_reg(0).bits,x_fp_reg(4).bits)
       }
       
     }
   }
-  when(Float2FxpModule_reset) {
-    Float2FxpModule.io.reset := true.B
-    Float2FxpModule_reset := false.B
+  when(float2FxpModuleReset) {
+    float2FxpModule.io.reset := true.B
+    float2FxpModuleReset := false.B
    // printf("reset\n")
   }.otherwise {
-    Float2FxpModule.io.reset := false.B
+    float2FxpModule.io.reset := false.B
   }
   //printf("x_fp_reg.valid: %d,x_fp_reg.bits: %d\n",x_fp_reg.valid,x_fp_reg.bits(0))
   //when(x_fp_reg.valid){
@@ -236,7 +236,7 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
 
    //max
   val max = RegInit(0.U((I + F).W))
-  max := x_fp_reg.reduceTree((a, b) => Mux(a.bits > b.bits, a, b)).bits
+  max := xFp.reduceTree((a, b) => Mux(a.bits > b.bits, a, b)).bits
 
 
 
@@ -246,69 +246,69 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
   //find all the exp(x - max)  x_fp->exp_x_fp
   val expModule=Module(new MultiPEFxpExp(numPE))
 
-  val expModule_row=Counter(arraySize/numPE)
-  val exp_x_fp_reg=Reg((Vec(arraySize,  Valid(UInt((I + F).W)))))
-  val expModule_reset = RegInit(false.B) // 复位标志
-  val expModule_done = RegInit(false.B) // 完成标志
+  val expModuleRow=Counter(arraySize/numPE)
+  val expX=Reg((Vec(arraySize,  Valid(UInt((I + F).W)))))
+  val expModuleReset = RegInit(false.B) // 复位标志
+  val expModuleDone = RegInit(false.B) // 完成标志
   for(i<-0 until numPE){
-    expModule.io.x.bits(i):=x_fp_reg(expModule_row.value*numPE.U+i.U).bits
+    expModule.io.x.bits(i):=xFp(expModuleRow.value*numPE.U+i.U).bits
   }
   expModule.io.max:=max
-  expModule.io.x.valid:=(0 until numPE).map(i => x_fp_reg(expModule_row.value*numPE.U+i.U).valid).reduce(_ && _)
+  expModule.io.x.valid:=(0 until numPE).map(i => xFp(expModuleRow.value*numPE.U+i.U).valid).reduce(_ && _)
   //状态转移
-  switch(expModule_state) {
+  switch(expModuleState) {
     is(state.idle) {
-      when(x_fp_reg.map(_.valid).reduce(_ && _)) {
+      when(xFp.map(_.valid).reduce(_ && _)) {
         for(i<-0 until numPE){
-          x_fp_reg(expModule_row.value*numPE.U+i.U).valid:=false.B
+          xFp(expModuleRow.value*numPE.U+i.U).valid:=false.B
         }
-        expModule_state:=state.compute
+        expModuleState:=state.compute
         //printf("exp compute\n")
       }
     }
     is(state.compute) {
       when(expModule.io.valid) {
         for (i <- 0 until numPE) {
-          exp_x_fp_reg(expModule_row.value*numPE.U+i.U).bits:=expModule.io.exp_x(i)
+          expX(expModuleRow.value*numPE.U+i.U).bits:=expModule.io.exp_x(i)
         }
-        expModule_reset:= true.B
-        expModule_state:=state.update
+        expModuleReset:= true.B
+        expModuleState:=state.update
        // printf("update\n")
       }
     }
 
     is(state.update) {
-      when(expModule_row.inc()) {
-        expModule_state:=state.done  
+      when(expModuleRow.inc()) {
+        expModuleState:=state.done  
         //printf("done\n")
       }.otherwise {
-        expModule_state:=state.delay
+        expModuleState:=state.delay
         //("compute\n") 
       }
 
     }
     is(state.delay) {
-      when((0 until numPE).map(i => x_fp_reg(expModule_row.value*numPE.U+i.U).valid).reduce(_ && _)) {
+      when((0 until numPE).map(i => xFp(expModuleRow.value*numPE.U+i.U).valid).reduce(_ && _)) {
         for(i<-0 until numPE){
-          x_fp_reg(expModule_row.value*numPE.U+i.U).valid:=false.B
+          xFp(expModuleRow.value*numPE.U+i.U).valid:=false.B
         }
       }
-      expModule_state:=state.compute
+      expModuleState:=state.compute
     }
     is(state.done) {
-      expModule_done:= true.B
-      when(divModule_state===state.idle){
+      expModuleDone:= true.B
+      when(divModuleState===state.idle){
         for(i<-0 until arraySize){
-          exp_x_fp_reg(i).valid:=true.B
+          expX(i).valid:=true.B
         }
-        expModule_state:=state.idle
+        expModuleState:=state.idle
         //printf("idle\n")
       }
     }
   }
-  when(expModule_reset) {
+  when(expModuleReset) {
     expModule.io.reset := true.B
-    expModule_reset := false.B
+    expModuleReset := false.B
     //printf("reset\n")
   }.otherwise {
     expModule.io.reset := false.B
@@ -328,7 +328,7 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
     when(queue.io.enq.valid){
       printf("queue.io.enq.bits: %d %d\n",queue.io.enq.bits(0),queue.io.enq.bits(4))
     }*/
-  //printf("Float2FxpModule_state: %d\n",Float2FxpModule_state.asUInt)
+  //printf("float2FxpModuleState: %d\n",float2FxpModuleState.asUInt)
   //when(queue.io.deq.valid&&queue.io.deq.ready){
    // printf("queue.io.deq.bits: %d %d\n",queue.io.deq.bits(0),queue.io.deq.bits(4))
   //}
@@ -339,72 +339,72 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
   //when(exp_x_fp_reg.valid){
    // printf("exp_x_fp_reg.bits: %d %d\n",exp_x_fp_reg.bits(0),exp_x_fp_reg.bits(1))
  // }
-  val exp_sum_fp=exp_x_fp_reg.map(_.bits).reduce((a, b) => a + b)
+  val expSumFp=expX.map(_.bits).reduce((a, b) => a + b)
   val divModule=Module(new MultiPEFxpDiv(numPE))
-  val divModule_row=Counter(arraySize/numPE)
-  val soft_x_fp_reg=Reg((Vec(arraySize,  Valid(UInt((I + F).W)))))
+  val divModuleRow=Counter(arraySize/numPE)
+  val softX=Reg((Vec(arraySize,  Valid(UInt((I + F).W)))))
   val divModule_reset = RegInit(false.B) // 复位标志
   val divModule_done = RegInit(false.B) // 完成标志
   for(i<-0 until numPE){
-    divModule.io.dividend(i).bits:=exp_x_fp_reg(divModule_row.value*numPE.U+i.U).bits
-    divModule.io.dividend(i).valid:=exp_x_fp_reg(divModule_row.value*numPE.U+i.U).valid
+    divModule.io.dividend(i).bits:=expX(divModuleRow.value*numPE.U+i.U).bits
+    divModule.io.dividend(i).valid:=expX(divModuleRow.value*numPE.U+i.U).valid
   }
-  divModule.io.divisor.bits:=exp_sum_fp
-  divModule.io.divisor.valid:=(0 until numPE).map(i => exp_x_fp_reg(divModule_row.value*numPE.U+i.U).valid).reduce(_ && _)
+  divModule.io.divisor.bits:=expSumFp
+  divModule.io.divisor.valid:=(0 until numPE).map(i => expX(divModuleRow.value*numPE.U+i.U).valid).reduce(_ && _)
   //状态转移
   switch(divModule_state) {
     is(state.idle) {
       when(exp_x_fp_reg.map(_.valid).reduce(_ && _)) {
         for(i<-0 until numPE){
-          exp_x_fp_reg(divModule_row.value*numPE.U+i.U).valid:=false.B
+          expX(divModuleRow.value*numPE.U+i.U).valid:=false.B
         }
-        divModule_state:=state.compute
+        divModuleState:=state.compute
         //printf("compute\n")
       }
     }
     is(state.compute) {
       when(divModule.io.valid) {
         for (i <- 0 until numPE) {
-          soft_x_fp_reg(divModule_row.value*numPE.U+i.U).bits:=divModule.io.out(i).bits
+          softX(divModuleRow.value*numPE.U+i.U).bits:=divModule.io.out(i).bits
         }
-        divModule_reset:= true.B
-        divModule_state:=state.update
+        divModuleReset:= true.B
+        divModuleState:=state.update
         //printf("update\n")
       }
     }
 
     is(state.update) {
-      when(divModule_row.inc()) {
-        divModule_state:=state.done  
+      when(divModuleRow.inc()) {
+        divModuleState:=state.done  
         //printf("done\n")
       }.otherwise {
-        divModule_state:=state.delay
+        divModuleState:=state.delay
         //printf("compute\n")
       }
 
     }
     is(state.delay) {
-      when((0 until numPE).map(i => exp_x_fp_reg(divModule_row.value*numPE.U+i.U).valid).reduce(_ && _)) {
+      when((0 until numPE).map(i => expX(divModuleRow.value*numPE.U+i.U).valid).reduce(_ && _)) {
         for(i<-0 until numPE){
-          exp_x_fp_reg(divModule_row.value*numPE.U+i.U).valid:=false.B
+          expX(divModuleRow.value*numPE.U+i.U).valid:=false.B
         }
       }
-      divModule_state:=state.compute
+      divModuleState:=state.compute
     }
     is(state.done) {
       divModule_done:= true.B
       for(i<-0 until arraySize){
-        soft_x_fp_reg(i).valid:=true.B
+        softX(i).valid:=true.B
       }
       io.soft_x.valid := true.B
-      io.soft_x.bits := soft_x_fp_reg.map(_.bits)
-      divModule_state:=state.idle
+      io.soft_x.bits := softX.map(_.bits)
+      divModuleState:=state.idle
       //printf("idle\n")
     }
   }
-  when(divModule_reset) {
+  when(divModuleReset) {
     divModule.io.reset := true.B
-    divModule_reset := false.B
+    divModuleReset := false.B
   }.otherwise {
     divModule.io.reset := false.B
   }
@@ -412,4 +412,96 @@ class Softmax(val arraySize: Int = 512,val numPE: Int = 16,queueDepth: Int = 100
  // printf("exp_x_fp_reg.valid: %d,exp_x_fp_reg.bits: %d\n",exp_x_fp_reg.valid,exp_x_fp_reg.bits(0))
   //printf("soft_x_fp_reg.valid: %d,soft_x_fp_reg.bits: %d\n",soft_x_fp_reg.valid,soft_x_fp_reg.bits(0))
   //printf("io.soft_x.valid: %d,io.soft_x.bits: %d\n",io.soft_x.valid,io.soft_x.bits(0))
+}
+
+
+class ExpUnitFixPoint(width: Int, point: Int, lut_bits: Int, append_bits: Int) extends Module {
+  val v_width = width + append_bits
+  val v_point = point + append_bits
+  val fpType = FixedPoint(width.W, point.BP)
+  val vType = FixedPoint(v_width.W, v_point.BP)
+  val io = IO(new Bundle {
+    val in_value = Input(SInt(width.W))
+    val out_exp = Output(UInt(width.W))
+  })
+
+  val x = Wire(UInt(width.W))
+  val y = Wire(UInt(v_width.W))
+  val z1 = Wire(vType)
+  val z2 = Wire(vType)
+
+  val s = Reg(fpType)
+
+  val u = Wire(UInt((width - point).W))
+  val v = Wire(vType)
+
+  val testers =
+    Range.BigDecimal(0.0, 1.0, pow(2.0, -point)).map((a) => pow(2.0, a.toDouble) - a)
+  val d_value =
+    (testers.reduce((a, b) => if (a > b) a else b) +
+      testers.reduce((a, b) => if (a < b) a else b)) / 2.0
+
+  val d_fixed = FixedPoint.fromBigDecimal(d_value, v_width.W, v_point.BP)
+  val d_wire = Wire(vType)
+  if (lut_bits == 0)
+    d_wire := d_fixed
+  else {
+    val lut_in = Range(0, 1 << lut_bits)
+    val lut_out =
+      lut_in
+        .map((x) => x / pow(2.0, lut_bits))
+        .map((x) => {
+          val r = Range
+            .BigDecimal(x, x + pow(2.0, -lut_bits), pow(2.0, -lut_bits))
+            .map((y) => pow(2.0, y.toDouble) - y)
+          (r.reduce((a, b) => if (a > b) a else b) +
+            r.reduce((a, b) => if (a < b) a else b)) / 2.0
+        })
+        .map((x) =>
+          FixedPoint
+            .fromBigDecimal(x, v_width.W, v_point.BP)
+        )
+    // val lut_mem = Mem(lut_in.length, vType)
+    // for (i <- 0 until lut_out.length)
+    //   lut_mem(i.U) := lut_out(i)
+
+    val v_bits = Wire(UInt(lut_bits.W))
+    v_bits := v.asUInt(v_point - 1, v_point - lut_bits)
+
+    var w = when(v_bits === lut_in(0).U) {
+      d_wire := lut_out(0)
+    }
+    for (i <- 1 until lut_in.size)
+      w = w.elsewhen(v_bits === lut_in(i).U) {
+        d_wire := lut_out(i)
+      }
+    w.otherwise {
+      d_wire := DontCare
+    }
+    // d_wire := lut_mem(v_bits)
+  }
+  // println(d_fixed)
+
+  x := io.in_value.asUInt
+  y := (x << append_bits) + (x << (append_bits - 1)) - (x << (append_bits - 4));
+
+  u := y(v_width - 1, v_point)
+  v := Cat(0.U((v_width - v_point).W), y(v_point - 1, 0))
+    .asFixedPoint(v_point.BP)
+
+  z1 := v + d_wire
+  z2 := z1 << u;
+
+  // printf(
+  //   "x:%b y:%b u:%b v:%b d:%b z1:%b z2:%b\n",
+  //   x,
+  //   y,
+  //   u,
+  //   v.asUInt(),
+  //   d_wire.asUInt(),
+  //   z1.asUInt(),
+  //   z2.asUInt()
+  // )
+ 
+  io.out_exp := z2.asUInt
 }
