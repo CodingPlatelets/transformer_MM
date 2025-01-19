@@ -184,6 +184,13 @@ class GEMMFMATotal(
   // cases "Exception in thread "chiseltest_thread_2" java.lang.RuntimeException: Deadlock!" Error
   // when test fork() and join() in chiseltest
 
+
+  //TODO:
+  // all the moudle use readyReg can case deadlock
+  // but use true.B ,false.B can't
+  // when fork() and join() in chiseltest
+  // maybe something wrong not find
+
   // val readyReg = RegInit(true.B)
   // val resValid = RegInit(false.B)
   // io.matrixA.ready := readyReg

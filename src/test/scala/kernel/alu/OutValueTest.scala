@@ -119,16 +119,17 @@ class OutValueTest extends AnyFlatSpec with ChiselScalatestTester with ParallelT
         var rowIdx = 0
         while (rowIdx < m) {
           if (dut.io.curScores.ready.peekBoolean()) {
-            println(s"curScores index: $rowIdx is ready")
+            println(s"case ${cnt-1} curScores index: $rowIdx is ready")
             dut.io.curScores.valid.poke(true.B)
             for (i <- 0 until m) {
               dut.io.curScores.bits.value(i).poke(toBinaryBigInt(inScores(rowIdx)(i)).U)
             }
+            dut.io.curScores.bits.index.poke(rowIdx.U)
+            rowIdx += 1
           } else {
             dut.io.curScores.valid.poke(false.B)
           }
           dut.clock.step()
-          rowIdx += 1
         }
       }
     }.fork {
@@ -139,11 +140,10 @@ class OutValueTest extends AnyFlatSpec with ChiselScalatestTester with ParallelT
         while (rowIdx < m) {
           val precision = 0.001f
           var invalidcnt = 0
-          if (dut.io.curAttnOut.ready.peekBoolean()) {
+          if (dut.io.curAttnOut.valid.peekBoolean()) {
             dut.io.curAttnOut.ready.poke(true.B)
             val curRowIndex = dut.io.curAttnOut.bits.index.peekInt()
-            println(s"curRow index: $curRowIndex")
-            dut.io.curAttnOut.bits.index.poke(rowIdx.U)
+            dut.io.curAttnOut.bits.index.expect(rowIdx.U)
             for (i <- 0 until n) {
               val outBigInt = dut.io.curAttnOut.bits.value(i).peekInt()
               val out = fromBinaryBigInt[T](outBigInt)
@@ -162,13 +162,17 @@ class OutValueTest extends AnyFlatSpec with ChiselScalatestTester with ParallelT
           }
           dut.clock.step()
         }
+        dut.clock.step()
         dut.io.done.expect(true.B)
+        println(s"case $resCnt done\n")
         resCnt += 1
       }
     }.join()
   }
 
-  //TODO:OutValueSingle Test ERROR
+  //TODO: Fix the warning in the OutValueSingle module
+  // warning: This module has an additional loop for the curScores input. 
+  // The error might be caused by the valid signal of the input"curScores", but it hasn't been resolved yet.
   "OutValueSingle " should "compute fxp matrix multiplication" in {
     implicit val config: DataWidthConfig = FxpConfig
     test(new OutValueSingle(m = 8, n = 12, peCount = 4, gemmType = GEMMDataType.Fxp))

@@ -110,7 +110,7 @@ class OutValueSingle(
 
   val multiFMA = Module(new MultiFMA(m, peCount, gemmType))
 
-  val rowIndex = Counter(m)
+  // val rowIndex = Counter(m)
   val colIndex = Counter(n / peCount)
 
   multiFMA.io.matrixA_row.valid := io.curScores.valid
@@ -127,9 +127,10 @@ class OutValueSingle(
   multiFMA.io.blockResult.ready := false.B
 
   val curRowReg = Reg(Vec(n, UInt(config.outputWidth.W)))
+  val curRowIndex = RegInit(0.U)
 
   object state extends ChiselEnum {
-    val idle, compute, update, load, done = Value
+    val idle, compute, update, output, load, done = Value
   }
 
   val stateReg = RegInit(state.idle)
@@ -144,40 +145,54 @@ class OutValueSingle(
     }
     is(state.compute) {
       io.curScores.ready := false.B
+      io.Value.ready := false.B
+      
       multiFMA.io.reset := false.B
       multiFMA.io.blockResult.ready := true.B
+      curRowIndex := io.curScores.bits.index
       when(multiFMA.io.blockResult.valid) {
         for (i <- 0 until peCount) {
-          curRowReg(colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0) := multiFMA.io.blockResult.bits(i)
+          curRowReg((colIndex.value * peCount.U + i.U)(log2Ceil(n) - 1, 0)) := multiFMA.io.blockResult.bits(i)
         }
         stateReg := state.update
       }
     }
     is(state.update) {
+      io.curScores.ready := false.B
+      io.Value.ready := false.B
       multiFMA.io.reset := true.B
       multiFMA.io.blockResult.ready := false.B
-      io.curAttnOut.valid := false.B
+      // io.curAttnOut.valid := false.B
       when(colIndex.inc()) {
         io.curAttnOut.valid := true.B
-        io.curAttnOut.bits.index := rowIndex.value
+        io.curAttnOut.bits.index := curRowIndex
         io.curAttnOut.bits.value := curRowReg
-        when(rowIndex.inc()) {
-          stateReg := state.done
-        }.otherwise {
-          stateReg := state.load
-        }
+        stateReg := state.output
       }.otherwise {
         stateReg := state.compute
       }
     }
+    is(state.output) {
+      io.curScores.ready := false.B
+      io.Value.ready := false.B
+      when(io.curScores.bits.index === (m - 1).U) {
+        // print(p"curScores.ready: ${io.curScores.ready}")
+        stateReg := state.done
+      }.otherwise {
+        stateReg := state.load
+      }
+    }
     is(state.load) {
       io.curScores.ready := true.B
+      io.Value.ready := false.B
+      io.curAttnOut.valid := false.B
       stateReg := state.compute
     }
     is(state.done) {
       io.done := true.B
       io.Value.ready := true.B
       io.curScores.ready := true.B
+      io.curAttnOut.valid := false.B
       stateReg := state.idle
     }
   }
