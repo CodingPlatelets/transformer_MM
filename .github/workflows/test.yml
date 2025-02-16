@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  verilator-version: v4.202
+  verilator-version: v5.020
   verilator-install-dir: verilator-install
 
 jobs:
