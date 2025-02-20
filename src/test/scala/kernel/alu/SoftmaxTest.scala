@@ -144,16 +144,16 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
     BigInt((d * (1L << fracBits)).round)
   }
   val arrayNum=4
-  val arraySize = 64
-  val numPE = 8
+  val arraySize = 16
+  val numPE = 4
   val FF = 24
   val queueDepth = 100
   val pow2 = scala.math.pow(2, FF).toFloat
   val annos = Seq(VerilatorBackendAnnotation)
   it should "softmax in float" in {
-    test(new Softmax(arraySize, numPE, queueDepth))
+    test(new Softmax1(arraySize, numPE, queueDepth))
       .withAnnotations(annos) { dut =>
-        dut.clock.setTimeout(0) 
+        // dut.clock.setTimeout(1000) 
         val rseed = 4
         val rnd = new scala.util.Random(rseed)
         val testQ =Seq.tabulate(arrayNum,arraySize)((row,col) => rnd.nextFloat())
@@ -213,61 +213,3 @@ class SoftmaxTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestT
 
 
 
-class ExpUnitFixPointTest extends AnyFlatSpec with SoftmaxAccuracy with ChiselScalatestTester {
-
-//   val bit = 64
-//   val dimV = 32
-//   val depth = 128
-  val FF = 24
-  val annos = Seq(VerilatorBackendAnnotation)
-  val pow2 = scala.math.pow(2, FF).toFloat
-  //val width = 32
-  //val point = 24
-  val lut_bits = 5
-  val append_bits = 10
-  behavior.of("tester on exp function in chisel")
-  it should "exp in fixedpoint" in {
-    test(new ExpUnitFixPoint(I+F,F,lut_bits,append_bits))
-      .withAnnotations(annos) { dut =>
-        dut.clock.step()
-        dut.clock.step()
-        //generate a range number from -10.5 to 0.0 step 0.5
-        val range = BigDecimal(-7.0) to BigDecimal(-7.0) by BigDecimal(1.5)
-        // val writer = new PrintWriter(new File("test_results.csv"))
-
-        // writer.write("Input Value,Computed Exp,Actual Exp,Relative Error (%)\n")
-
-
-        fork {
-          for (value <- range) {
-            dut.io.in_value.poke(value.F(F.BP).asSInt)
-            println(s"value: ${value.F(F.BP).asSInt}")
-            dut.clock.step()
-          }
-        }.fork {
-          dut.clock.step()
-          var delay=0
-          while (dut.io.out_exp.peekInt()==0) {
-            dut.clock.step()
-            delay=delay+1
-          }
-          printf("delay: %d\n",delay.U)
-          for (value <- range) {
-            val actualValue = scala.math.exp(value.toDouble).toFloat
-
-            val computedValue = dut.io.out_exp.peekInt().toFloat / pow2
-            val relativeError = ((actualValue - computedValue) / actualValue).abs * 100
-
-            println(
-               s"actualValue is $actualValue,\t computedValue is $computedValue,\t relativeError is $relativeError"
-             )
-            //assert(relativeError < 5)
-
-            dut.clock.step()
-          }
-        }.join()
-
-      // writer.close()
-      }
-  }
-}

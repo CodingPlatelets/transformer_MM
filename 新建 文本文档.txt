@@ -1,0 +1,52 @@
+io.x.valid: 1,io.x.bits: 1060833592 1063987670
+queue.io.enq.valid: 1,queue.io.enq.bits: 1060833592 1063987670
+io.x.valid: 1,io.x.bits: 1041947796 1061391031
+queue.io.enq.valid: 1,queue.io.enq.bits: 1041947796 1061391031
+queue.io.deq.valid: 1,queue.io.deq.bits: 1060833592 1063987670
+io.x.valid: 1,io.x.bits: 1051129450 1049596710
+queue.io.enq.valid: 1,queue.io.enq.bits: 1051129450 1049596710
+xReg.valid: 1,xReg.bits: 1060833592 1063987670
+io.x.valid: 1,io.x.bits: 1057368044 1051824570
+queue.io.enq.valid: 1,queue.io.enq.bits: 1057368044 1051824570
+queue.io.deq.valid: 1,queue.io.deq.bits: 1041947796 1061391031
+xFp.valid: 1,xFp.bits:   12257592   15411670
+xReg.valid: 1,xReg.bits: 1041947796 1061391031
+expX.valid: 1,expX.bits:   13933103   16780060
+queue.io.deq.valid: 1,queue.io.deq.bits: 1051129450 1049596710
+xFp.valid: 1,xFp.bits:    2537253   12815031
+xReg.valid: 1,xReg.bits: 1051129450 1049596710
+softX.valid: 1,softX.bits:    1153404    1389079
+expX.valid: 1,expX.bits:    7518377   13873237
+queue.io.deq.valid: 1,queue.io.deq.bits: 1057368044 1051824570
+xFp.valid: 1,xFp.bits:    5471029    4704659
+xReg.valid: 1,xReg.bits: 1057368044 1051824570
+softX.valid: 1,softX.bits:     695397    1283176
+expX.valid: 1,expX.bits:    9487311    9067957
+xFp.valid: 1,xFp.bits:    8792044    5818589
+softX.valid: 1,softX.bits:     832227     795441
+expX.valid: 1,expX.bits:   10483034    8784996
+softX.valid: 1,softX.bits:     982175     823083
+
+
+
+//expX:13933103   16780060
+//expX:7518377   13873237
+//expX:9487311    9067957
+//expX:10483034    8784996
+
+
+
+expXReg.valid: 1,expXReg.bits:   13933103   16601168   16781799   15094333   16780060    8327793   13233393    8878400    7258329   11002999    6878410   15732297   13499607   14922622   15007871    8736381 
+
+
+
+expXReg.valid: 1,expXReg.bits:    7518377   11446130   16272875    9788017   13873237   13233129    6480390   10975774   13495045    9220461   16781799   10121758   14729834    7356569    7802170   12293639 
+
+
+
+expXReg.valid: 1,expXReg.bits:    9487311   10328646   14598704    8302127    9067957   10763297    8635171   12363065   15434800   14376017   14710747   10389898   15038740   10929814   16781799   10050571 
+
+
+
+expXReg.valid: 1,expXReg.bits:   10483034   13624417    6561685   14789715    8784996    7061776   10027911   10110576   15435971    7476394   10990226   10636089   10848505   14450191   11004691   16781799 
+
