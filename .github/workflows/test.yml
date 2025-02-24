@@ -29,7 +29,8 @@ jobs:
           apps: sbt 
       - name: Setup Dependencies
         run: |
-          sudo apt-get install ccache
+          sudo apt-get install ccache g++-11  # 安装 GCC 11
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 11
       - name: Get Cached Verilator
         id: get-cached-verilator
         uses: actions/cache@v4
