@@ -28,8 +28,8 @@ lazy val root = (project in file("."))
   .dependsOn(hardfloat)
   .settings(
     name := "transformer_MM",
-    // fork := true,
-    // javaOptions += "-Xmx50G",
+    fork := true,
+    javaOptions += "-Xmx16G",
     commonChiselSettings
   )
 

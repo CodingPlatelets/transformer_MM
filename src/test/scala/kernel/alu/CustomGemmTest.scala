@@ -6,6 +6,7 @@ import org.scalatest.Tag
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.ParallelTestExecution
 import scala.reflect.ClassTag
+import ujson.Arr
 
 class CustomGemmTest extends AnyFlatSpec with ChiselScalatestTester with ParallelTestExecution {
 
@@ -178,14 +179,16 @@ class CustomGemmTest extends AnyFlatSpec with ChiselScalatestTester with Paralle
     }
     //printmat((matrixAArray(0).flatten), p, m)
     //printmat((matrixBArray(0).flatten), m, q)
-    printmat((matrixArray(0).flatten), p, q)
+    var BitIntMat = Array.ofDim[BigInt](p, q)
+    for (i <- 0 until p) {
+      for (j <- 0 until q) {
+        BitIntMat(i)(j) = toBinaryBigInt[T](matrixArray(0)(i)(j))
+      }
+    }
+    printmat((BitIntMat.flatten), p, q)
     def checkresult(): List[T] = {
       val ret = for (i <- 0 until p * q) yield {
         val out = fromBinaryBigInt[T](dut.io.out.bits(i).peekInt())
-        // printf(cf"${out} ")
-        // if((i+1)%q==0){
-        //   println()
-        // }
         out
       }
       ret.toList
@@ -246,13 +249,108 @@ class CustomGemmTest extends AnyFlatSpec with ChiselScalatestTester with Paralle
         }
         dut.clock.step()
       }
-
     }.join()
   }
  
-  "CustomGemm basic test on Verilator" should "pass" in {
-    implicit val fxpConfig: DataWidthConfig = FxpConfig
-    test(new CustomGemm(4, 4, 4, 4, GEMMDataType.Fxp))
-    .withAnnotations(Seq(VerilatorBackendAnnotation))(testCustomGemm[Float])
+  private def testCustomGemmQueue[T: Numeric: ClassTag]
+  (dut: CustomGemmQueue)
+  (implicit config: DataWidthConfig) = {
+    dut.clock.setTimeout(0)
+    val p = dut.p
+    val q = dut.q
+    val m = dut.m
+    val arraySize = 1
+    val matrixAArray = Array.tabulate(arraySize)(_ => matInit[T](p, m))
+    val matrixBArray = Array.tabulate(arraySize)(_ => matInit[T](m, q))
+    val matrixArray = matrixAArray.zip(matrixBArray).map {
+      case (a, b) => mmul(a, b)
+    }
+    //printmat((matrixAArray(0).flatten), p, m)
+    //printmat((matrixBArray(0).flatten), m, q)
+    def checkresult(): List[T] = {
+      val ret = for (i <- 0 until p * q) yield {
+        val out = fromBinaryBigInt[T](dut.io.out.bits(i).peekInt())
+        out
+      }
+      ret.toList
+    }   
+
+    fork {
+      var c = 0;
+      while (c < arraySize) {
+        dut.io.flush.poke(true.B)
+        dut.clock.step()
+        dut.io.flush.poke(false.B)
+        if (dut.io.in_a.ready.peekBoolean() && dut.io.in_b.ready.peekBoolean()) {
+          dut.io.in_a.valid.poke(true.B)
+          dut.io.in_b.valid.poke(true.B)
+          for (i <- 0 until m) {
+            for (j <- 0 until p) {
+              dut.io.in_a.bits(j * m + i).poke(toBinaryBigInt(matrixAArray(c)(j)(i)).U)
+            }
+            for (j <- 0 until q) {
+              dut.io.in_b.bits(i * q + j).poke(toBinaryBigInt(matrixBArray(c)(i)(j)).U)
+            }
+          }
+          c += 1
+        } else {
+          dut.io.in_a.valid.poke(false.B)
+          dut.io.in_b.valid.poke(false.B)
+        }
+        dut.clock.step()
+        dut.io.in_a.valid.poke(false.B)
+        dut.io.in_b.valid.poke(false.B)
+      }
+    }.fork {
+      var resC = 0
+      while (resC < arraySize) {
+        if (dut.io.out.valid.peekBoolean()) {
+          println(f"in ${dut.io.out.valid.peekBoolean()} ${dut.io.out.ready.peekBoolean()}")
+          dut.io.out.ready.poke(true.B)
+          val out = checkresult()
+          printmat(out.toArray, p, q)
+          var invalidcnt = 0
+          var cnt = 0
+          for (i <- out.zip(matrixArray(resC).flatten.toList)) {
+            val isInvalid = (implicitly[ClassTag[T]].runtimeClass match {
+              case c if c == classOf[Float] =>
+                math.abs(i._1.asInstanceOf[Float] - i._2.asInstanceOf[Float]) > precision
+              case c if c == classOf[Double] =>
+                math.abs(i._1.asInstanceOf[Double] - i._2.asInstanceOf[Double]) > precision
+              case c if c == classOf[Int] =>
+                math.abs(i._1.asInstanceOf[Int] - i._2.asInstanceOf[Int]) > precision
+              case _ =>
+                throw new IllegalArgumentException(s"Unsupported type: ${implicitly[ClassTag[T]].runtimeClass}")
+            })
+            if (isInvalid) {
+              println(f"Error: ${cnt} ${i._1} ${i._2}")
+              invalidcnt += 1
+            }
+            cnt = cnt + 1
+          } 
+          if (invalidcnt == 0) println("GEMM Verification passed!")
+          assert(invalidcnt == 0)
+          resC += 1
+        } else {
+          dut.io.out.ready.poke(false.B)
+        }
+        dut.clock.step()
+        dut.io.out.ready.poke(false.B)
+        println(f"out ${dut.io.out.valid.peekBoolean()} ${dut.io.out.ready.peekBoolean()}")
+      }
+    }.join()
+  }
+
+
+  // "CustomGemm basic test on Verilator" should "pass" in {
+  //   implicit val fxpConfig: DataWidthConfig = Fp32Config
+  //   test(new CustomGemm(2, 2, 2, 2, GEMMDataType.Fp32))
+  //   .withAnnotations(Seq(VerilatorBackendAnnotation))(testCustomGemm[Float])
+  // }
+
+  "CustomGemmQueue basic test on Verilator" should "pass" in {
+    implicit val fxpConfig: DataWidthConfig = Fp32Config
+    test(new CustomGemmQueue(2, 2, 2, 2, GEMMDataType.Fp32, 32))
+    .withAnnotations(Seq(VerilatorBackendAnnotation))(testCustomGemmQueue[Float])
   }
 }

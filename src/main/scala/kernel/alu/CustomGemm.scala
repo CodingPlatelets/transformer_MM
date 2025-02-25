@@ -21,7 +21,7 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
   })
   val matrixAReg = RegInit(VecInit.fill(p)(VecInit.fill(m)(0.U(config.inputWidth.W))))
   val matrixBReg = RegInit(VecInit.fill(m)(VecInit.fill(q)(0.U(config.inputWidth.W))))
-  val ResultReg = RegInit(VecInit.fill(p)(VecInit.fill(q)(0.U(config.inputWidth.W))))
+  val ResultReg = RegInit(VecInit.fill(p)(VecInit.fill(q)(0.U(config.outputWidth.W))))
 
   val dataValid = io.in_a.valid && io.in_b.valid
 
@@ -87,10 +87,11 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
           for (j <- 0 until n) {
             val row = rowIndex.value * n.U + i.U
             val col = colIndex.value * n.U + j.U  
-            //debugLog(p"row: ${row} col: ${col} value: ${sysmm.io.out(i * n + j)} \n", LogLevel.DEBUG)
+            debugLog(p"row: ${row} col: ${col} value: ${sysmm.io.out(i * n + j)} \n", LogLevel.DEBUG)
             ResultReg(row)(col) := sysmm.io.out(i * n + j)
           }
         }
+        
         sysmm.io.reset := true.B
       }
     }
@@ -102,6 +103,7 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
   }
   when(rowIndex.value === rowCnt.U) {
     resValid := true.B
+    //debugLog(p"busy: ${busy} resValid:${resValid} \n", LogLevel.DEBUG)
     when(io.out.ready) {
       rowIndex.reset()
       colIndex.reset()
@@ -112,4 +114,41 @@ class CustomGemm (val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int
   //println(cf"row is ${rowIndex} col is ${colIndex}")
   //printf(p"${rowIndex.value === rowCnt.U}\n")
   //debugLog(p"busy: ${busy} row: ${rowIndex.value} col: ${colIndex.value} out_valid: ${io.out.valid}\n", LogLevel.DEBUG)
+}
+
+class CustomGemmQueue(val n: Int = 4, val p: Int = 512, val q: Int = 512, val m: Int = 128, val gemmType: GEMMDataType.Type, val bufferSize: Int = 32)(implicit config: DataWidthConfig)
+    extends Module
+    with GEMMAccuracyConfig
+    with DebugLog{
+  val io = IO(new Bundle {
+    val in_a = Flipped(Decoupled(Vec(p * m, UInt(config.inputWidth.W))))
+    val in_b = Flipped(Decoupled(Vec(m * q, UInt(config.inputWidth.W))))
+    val reset = Input(Bool())
+    val flush = Input(Bool())
+    val gemm_out = Decoupled(Vec(p * q, UInt(config.outputWidth.W)))
+    val out = Decoupled(Vec(p * q, UInt(config.outputWidth.W)))
+    val done = Output(Bool())
+  })
+
+  val curBuffer = Module(
+    new Queue(
+      Vec(p * q, UInt(config.outputWidth.W)),
+      entries = bufferSize,
+      pipe = true,
+      flow = false,
+      useSyncReadMem = false,
+      hasFlush = true
+    )
+  )
+  val doneReg = RegInit(false.B)
+  val gemm = Module(new CustomGemm(n, p, q, m, gemmType))
+  gemm.io.in_a <> io.in_a
+  gemm.io.in_b <> io.in_b
+  gemm.io.reset <> io.reset
+  curBuffer.io.flush.get := io.flush
+  curBuffer.io.enq <> gemm.io.out
+  doneReg := gemm.io.out.valid
+  io.out <> curBuffer.io.deq
+  io.gemm_out <> gemm.io.out
+  io.done := doneReg
 }
