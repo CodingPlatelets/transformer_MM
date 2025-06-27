@@ -5,20 +5,20 @@ import chisel3.util._
 import kernel.utils.DebugLog
 
 /**
- * Performs vector addition on streaming data chunks.
- * It takes two vectors `in_a` and `in_b` chunk by chunk, adds them element-wise,
- * and streams out the resulting vector chunk. This is done in parallel using a
- * configurable number of Processing Elements (PEs).
- *
- * @param WII     Integer width of fixed-point numbers.
- * @param WIF     Fractional width of fixed-point numbers.
- * @param NUM_PE  Number of parallel Processing Elements, which also defines the chunk size.
- */
+  * Performs vector addition on streaming data chunks.
+  * It takes two vectors `in_a` and `in_b` chunk by chunk, adds them element-wise,
+  * and streams out the resulting vector chunk. This is done in parallel using a
+  * configurable number of Processing Elements (PEs).
+  *
+  * @param WII     Integer width of fixed-point numbers.
+  * @param WIF     Fractional width of fixed-point numbers.
+  * @param NUM_PE  Number of parallel Processing Elements, which also defines the chunk size.
+  */
 class AddPERow(
-    val WII: Int = 8,
-    val WIF: Int = 8,
-    val NUM_PE: Int = 16
-) extends Module
+  val WII:    Int = 8,
+  val WIF:    Int = 8,
+  val NUM_PE: Int = 16)
+    extends Module
     with DebugLog {
 
   val io = IO(new Bundle {
@@ -42,11 +42,9 @@ class AddPERow(
   // We are ready to accept input chunks if the downstream consumer is ready for our output.
   io.in_a.ready := true.B
   io.in_b.ready := true.B
-  
 
   // A transaction (a chunk computation) fires when both inputs are valid and we are ready.
   val fire = io.in_a.valid && io.in_b.valid
-
 
   // --- PE Connections ---
 
@@ -76,8 +74,7 @@ class AddPERow(
 
   io.overflow.valid := out_valid
   io.overflow.bits := overflow_bits
-} 
-
+}
 
 /**
   * Performs vector addition on large vectors using a limited number of parallel PEs.
@@ -172,6 +169,14 @@ class VectorAdd(
       // val base = chunk_counter.value * NUM_PE.U
       vectorAddPEs.io.out.ready := true.B
       when(vectorAddPEs.io.out.valid) {
+        // for (c <- 0 until NUM_CHUNKS) {
+        //   when(chunk_counter.value === c.U) {
+        //     val base_addr = c * NUM_PE
+        //     for (i <- 0 until NUM_PE) {
+        //       out_buf(base_addr + i) := vectorAddPEs.io.out.bits(i)
+        //     }
+        //   }
+        // }
         for (i <- 0 until NUM_PE) {
           out_buf(chunk_counter.value * NUM_PE.U + i.U) := vectorAddPEs.io.out.bits(i)
           // printf(p"$base ,i : $i ,bits: ${vectorAddPEs.io.out.bits(i)}\n ")
@@ -186,7 +191,6 @@ class VectorAdd(
       }
     }
     is(state.done) {
-      printf(p"jsdj\n")
       io.in_a.ready := true.B
       io.in_b.ready := true.B
       io.out.valid := out_valid

@@ -15,10 +15,10 @@ import kernel.utils.DebugLog
   * @param NUM_PE      The number of parallel Processing Elements to use for computation.
   */
 class HadamardPERow(
-    val WII: Int = 8,
-    val WIF: Int = 8,
-    val NUM_PE: Int = 16
-) extends Module
+  val WII:    Int = 8,
+  val WIF:    Int = 8,
+  val NUM_PE: Int = 16)
+    extends Module
     with DebugLog {
 
   val io = IO(new Bundle {
@@ -121,6 +121,15 @@ class VectorHadamard(
     is(state.compute) {
       hadamardPERow.io.out.ready := true.B
       when(hadamardPERow.io.out.valid) {
+
+        // for (c <- 0 until NUM_CHUNKS) {
+        //   when(chunk_counter.value === c.U) {
+        //     val base_addr = c * NUM_PE
+        //     for (i <- 0 until NUM_PE) {
+        //       out_buf(base_addr + i) := hadamardPERow.io.out.bits(i)
+        //     }
+        //   }
+        // }
         for (i <- 0 until NUM_PE) {
           out_buf(chunk_counter.value * NUM_PE.U + i.U) := hadamardPERow.io.out.bits(i)
         }
