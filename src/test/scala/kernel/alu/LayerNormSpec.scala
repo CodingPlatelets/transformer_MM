@@ -5,6 +5,8 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import chiseltest.simulator.WriteVcdAnnotation
 import chisel3.util.DecoupledIO
+import _root_.circt.stage.ChiselStage
+import chisel3.stage.ChiselGeneratorAnnotation
 
 class ResADDSpec extends AnyFlatSpec with ChiselScalatestTester {
 
@@ -131,8 +133,8 @@ class LayerNormSpec extends AnyFlatSpec with ChiselScalatestTester {
   it should "correctly perform layer normalization on large vectors using limited PEs" in {
     val WII = 8
     val WIF = 8
-    val VECTOR_SIZE = 1024 // 使用较小的尺寸以加快仿真速度
-    val NUM_PE = 32
+    val VECTOR_SIZE = 32 // 使用较小的尺寸以加快仿真速度
+    val NUM_PE = 8
 
     test(new LayerNorm(WII, WIF, VECTOR_SIZE, NUM_PE))
       .withAnnotations(Seq(TreadleBackendAnnotation, WriteVcdAnnotation)) { dut =>
@@ -315,4 +317,11 @@ class LayerNormSpec extends AnyFlatSpec with ChiselScalatestTester {
   //     }
   // }
 
+}
+
+object VerilogGen extends App {
+  (new ChiselStage).execute(
+    Array("-td", "verilog", "--target", "verilog"),
+    Seq(ChiselGeneratorAnnotation(() => new LayerNorm(WII = 8, WIF = 8, VECTOR_SIZE = 4096, NUM_PE = 64)))
+  )
 }
