@@ -1,3 +1,4 @@
+## 特别说明，本项目所有代码都版权所有为：@CodingPlatelets，未经允许，擅自使用本代码申请项目，软著，专利等的行为，将保留诉诸法律的权利。
 # Accelerator for LLM Based on Chisel3
 
 __This is a transformer-based large language model accelerator developed using Chisel HDL as the development language.__
