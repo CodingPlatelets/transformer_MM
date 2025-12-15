@@ -55,6 +55,30 @@ Simple multiply-accumulate (MAC) units that form the foundation of systolic arra
 - **Pipeline stages**: Each PE includes RegNext for horizontal and vertical data forwarding
 - Optimized for neural network dense layer operations with configurable matrix sizes
 
+##### 2.3.1 GEMM FMA (Fused Multiply-Add) Unit
+- Enhanced matrix multiplication using Fused Multiply-Add operations for improved precision and performance
+- **GEMMFMATotal**: Complete matrix multiplication module supporting both fixed-point and floating-point operations
+  - Configurable matrix dimensions (m × k × n)
+  - Uses FMA units for efficient computation
+  - Decoupled interfaces for input and output data flow
+- **GEMMFMASingle**: Single-row matrix multiplication for streaming applications
+  - Processes one row at a time to reduce memory requirements
+  - Returns results in row-by-row fashion
+  - Supports configurable PE count for parallel processing
+- **MultiFMA**: Multiple FMA units operating in parallel for increased throughput
+  - Configurable number of FMA units (peCount)
+  - Supports both fixed-point and floating-point operations
+  - Pipelined design for continuous data processing
+- **GEMMSingleQueue**: Queued single-row matrix multiplication with streaming support
+  - Maintains internal queue for multiple matrix operations
+  - Supports flushing of operations for dynamic workloads
+  - Optimized for attention mechanism computations
+- **Key features**:
+  - Improved numerical precision through FMA operations
+  - Configurable data types (GEMMDataType.Fxp, GEMMDataType.Fp32, GEMMDataType.Fp64)
+  - Pipelined architecture for high throughput
+  - Memory-efficient designs for different use cases
+
 ##### 2.4 GEMV (General Matrix-Vector Multiply) Unit
 - Reduction tree algorithm for vector-matrix multiplication using VecDotVec components
 - **VecDotVec**:
@@ -77,6 +101,36 @@ Simple multiply-accumulate (MAC) units that form the foundation of systolic arra
   - **Total latency**: Approximately 1 + 3 + log₂(arraySize) + (WOI + WOF + 3) cycles
 - Implements numerically stable softmax with max-subtraction technique to prevent overflow
 - Supports configurable array sizes (default 4 elements, configurable)
+
+##### 2.5.1 Attention Mechanism Components
+- **AttnScores**: Attention score computation module for transformer models
+  - **QKGenWithReg**: Generates Query and Key matrices with internal register storage
+    - Uses two GEMMFMATotal units to compute Q and K matrices simultaneously
+    - Stores computed Q and K in internal registers for reuse
+    - Input: inputToken (m × k), weightQ (k × n), weightK (k × n)
+    - Output: Query (m × n), Key (m × n)
+  - **QKGen**: Generates Query and Key matrices without internal storage
+    - Uses two GEMMFMATotal units for Q and K computation
+    - Direct streaming of results without internal storage
+    - State machine controlled (idle, gen, done states)
+  - **QKMulFMA**: Computes attention scores via Q×K^T multiplication using FMA units
+    - Single-row attention scores for memory efficiency
+    - Uses FMA units for improved precision
+    - Streaming input/output with Decoupled interfaces
+- **OutValue**: Output value computation using attention scores and value matrix
+  - **OutValueTotal**: Complete output computation module
+    - Multiplies attention scores with value matrix (Scores × Value)
+    - Computes full attention output in one operation
+    - Uses GEMM-style computation for attention mechanism
+  - **OutValueSingle**: Single-row output computation for streaming applications
+    - Processes one row of attention scores at a time
+    - Memory efficient for large attention matrices
+    - Maintains state between rows for continuous processing
+- **Key advantages**:
+  - Optimized for transformer model attention mechanisms
+  - Memory-efficient designs with configurable storage options
+  - Streaming interfaces for continuous processing
+  - FMA-based computation for improved numerical accuracy
 
 ##### 2.6 Obsolete Components
 - **SPMM (Sparse-Dense Matrix Multiplication)**: Performs sparse-dense matrix multiplication using MAC units with mask vectors to select needed elements
@@ -184,6 +238,40 @@ sbt "testOnly vitisrtlkernel.VitisRTLKernelTest"
     - Output: Hardware produces 16 result elements (4×4 result matrix C)
     - Validation: Each output element compared against software-calculated value C[i][j] = Σ A[i][k] * B[k][j]
   - **Test Configuration**: Supports different matrix sizes (n parameter), fixed-point configurations (I integer bits, F fractional bits), and data types
+- **GEMM FMA Tests**:
+  - **GEMMFMATotal Test**: Validates complete matrix multiplication using FMA operations
+    - Tests configurable matrix dimensions (m × k × n)
+    - Verifies both fixed-point and floating-point operations
+    - Uses fork-join testing methodology for concurrent input/output validation
+  - **GEMMFMASingle Test**: Validates single-row matrix multiplication
+    - Tests row-by-row processing for streaming applications
+    - Verifies proper indexing and continuous processing
+    - Supports configurable PE count for different parallelization levels
+  - **MultiFMA Test**: Validates multiple FMA units operating in parallel
+    - Tests configurable number of FMA units (peCount)
+    - Verifies pipelined processing of different matrix blocks
+    - Ensures precision improvements through FMA operations
+  - **GEMMSingleQueue Test**: Validates queued matrix operations
+    - Tests internal queue management for multiple operations
+    - Verifies flush functionality for dynamic workloads
+    - Supports attention mechanism computations with streaming inputs
+- **AttnScores Tests**:
+  - **QKGenWithReg Test**: Validates Query and Key matrix generation with internal storage
+    - Tests simultaneous Q and K computation using two GEMMFMATotal units
+    - Verifies internal register storage and reuse
+  - **QKGen Test**: Validates Query and Key matrix generation without storage
+    - Tests state machine control (idle, gen, done states)
+    - Verifies direct streaming of results
+  - **QKMulFMA Test**: Validates attention score computation via Q×K^T
+    - Tests single-row attention computation for memory efficiency
+    - Verifies FMA-based precision improvements
+- **OutValue Tests**:
+  - **OutValueTotal Test**: Validates complete output computation
+    - Tests attention score × value matrix multiplication
+    - Verifies full attention output computation
+  - **OutValueSingle Test**: Validates single-row output computation
+    - Tests memory-efficient streaming of large attention matrices
+    - Verifies state maintenance between rows
 - **GEMV Test**: Vector-matrix multiplication validation
   - Tests reduction tree algorithm implementation
   - Verifies `log(n) + 2` cycle timing
@@ -446,6 +534,40 @@ sbt "testOnly vitisrtlkernel.VitisRTLKernelTest"
     - 输出: 硬件产生16个结果元素（4×4结果矩阵C）
     - 验证: 每个输出元素与软件计算值 C[i][j] = Σ A[i][k] * B[k][j] 进行比较
   - **测试配置**: 支持不同矩阵大小（n参数）、定点配置（I整数位，F小数位）和数据类型
+- **GEMM FMA测试**:
+  - **GEMMFMATotal测试**: 验证使用FMA操作的完整矩阵乘法
+    - 测试可配置矩阵维度 (m × k × n)
+    - 验证定点和浮点操作
+    - 使用fork-join测试方法进行并发输入/输出验证
+  - **GEMMFMASingle测试**: 验证单行矩阵乘法
+    - 测试流式应用的逐行处理
+    - 验证适当的索引和连续处理
+    - 支持不同并行化级别的可配置PE计数
+  - **MultiFMA测试**: 验证并行运行的多个FMA单元
+    - 测试可配置的FMA单元数量 (peCount)
+    - 验证不同矩阵块的流水线处理
+    - 确保通过FMA操作提高精度
+  - **GEMMSingleQueue测试**: 验证队列矩阵操作
+    - 测试多个操作的内部队列管理
+    - 验证用于动态工作负载的刷新功能
+    - 支持带流式输入的注意力机制计算
+- **AttnScores测试**:
+  - **QKGenWithReg测试**: 验证带内部存储的查询和键矩阵生成
+    - 测试使用两个GEMMFMATotal单元同时进行Q和K计算
+    - 验证内部寄存器存储和重用
+  - **QKGen测试**: 验证无存储的查询和键矩阵生成
+    - 测试状态机控制 (idle, gen, done 状态)
+    - 验证直接流式输出
+  - **QKMulFMA测试**: 验证通过Q×K^T进行的注意力分数计算
+    - 测试用于内存效率的单行注意力计算
+    - 验证基于FMA的精度改进
+- **OutValue测试**:
+  - **OutValueTotal测试**: 验证完整输出计算
+    - 测试注意力分数×值矩阵乘法
+    - 验证完整注意力输出计算
+  - **OutValueSingle测试**: 验证单行输出计算
+    - 测试大注意力矩阵的内存高效流式处理
+    - 验证行之间的状态维持
 - **GEMV测试**: 向量-矩阵乘法验证
   - 测试归约树算法实现
   - 验证 `log(n) + 2` 周期时序
@@ -687,6 +809,30 @@ make clean_emu_vpp
 - **流水线阶段**：每个PE包含RegNext用于水平和垂直数据转发
 - 针对神经网络密集层操作优化，具有可配置矩阵大小
 
+##### 2.3.1 GEMM FMA (融合乘加) 单元
+- 使用融合乘加操作增强矩阵乘法，提高精度和性能
+- **GEMMFMATotal**: 支持定点和浮点操作的完整矩阵乘法模块
+  - 可配置矩阵维度 (m × k × n)
+  - 使用FMA单元进行高效计算
+  - 输入和输出数据流的解耦接口
+- **GEMMFMASingle**: 适用于流式应用的单行矩阵乘法
+  - 逐行处理以减少内存需求
+  - 按行返回结果
+  - 支持可配置PE计数以实现并行处理
+- **MultiFMA**: 并行运行的多个FMA单元，以提高吞吐量
+  - 可配置FMA单元数量 (peCount)
+  - 支持定点和浮点操作
+  - 流水线设计用于连续数据处理
+- **GEMMSingleQueue**: 支持流式处理的队列单行矩阵乘法
+  - 为多个矩阵运算维护内部队列
+  - 支持刷新操作以处理动态工作负载
+  - 针对注意力机制计算优化
+- **主要特点**:
+  - 通过FMA操作提高数值精度
+  - 可配置数据类型 (GEMMDataType.Fxp, GEMMDataType.Fp32, GEMMDataType.Fp64)
+  - 流水线架构实现高吞吐量
+  - 针对不同用例的内存高效设计
+
 ##### 2.4 GEMV (通用矩阵-向量乘法) 单元
 - 使用VecDotVec组件的归约树算法进行向量-矩阵乘法
 - **VecDotVec**：
@@ -709,6 +855,36 @@ make clean_emu_vpp
   - **总延迟**：约 1 + 3 + log₂(数组大小) + (WOI + WOF + 3) 周期
 - 实现数值稳定的softmax，采用最大值减法技巧防止溢出
 - 支持可配置数组大小（默认4个元素，可配置）
+
+##### 2.5.1 注意力机制组件
+- **AttnScores**: Transformer模型的注意力分数计算模块
+  - **QKGenWithReg**: 生成带内部寄存器存储的查询和键矩阵
+    - 使用两个GEMMFMATotal单元同时计算Q和K矩阵
+    - 在内部寄存器中存储计算的Q和K以供重用
+    - 输入: inputToken (m × k), weightQ (k × n), weightK (k × n)
+    - 输出: Query (m × n), Key (m × n)
+  - **QKGen**: 生成无内部存储的查询和键矩阵
+    - 使用两个GEMMFMATotal单元计算Q和K
+    - 直接流式输出结果，无内部存储
+    - 状态机控制 (idle, gen, done 状态)
+  - **QKMulFMA**: 使用FMA单元通过 Q×K^T 乘法计算注意力分数
+    - 单行注意力分数以提高内存效率
+    - 使用FMA单元提高精度
+    - 使用Decoupled接口的流式输入/输出
+- **OutValue**: 使用注意力分数和值矩阵计算输出值
+  - **OutValueTotal**: 完整输出计算模块
+    - 将注意力分数与值矩阵相乘 (Scores × Value)
+    - 一次操作计算完整注意力输出
+    - 使用GEMM风格计算进行注意力机制
+  - **OutValueSingle**: 单行输出计算，适用于流式应用
+    - 每次处理一行注意力分数
+    - 对大注意力矩阵的内存高效处理
+    - 在行之间维持状态以进行连续处理
+- **主要优势**:
+  - 针对Transformer模型注意力机制优化
+  - 具有可配置存储选项的内存高效设计
+  - 连续处理的流式接口
+  - 基于FMA的计算以提高数值精度
 
 ##### 2.6 已废弃组件
 - **SPMM (稀疏-稠密矩阵乘法)**：使用MAC单元和掩码向量执行稀疏-稠密矩阵乘法来选择所需元素
